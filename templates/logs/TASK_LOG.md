@@ -1,0 +1,9 @@
+# Task Log
+
+<!-- Synced from task files (active + archive). Rows are never deleted — only added or updated. Source of truth: task files. -->
+
+Quick overview of all tasks — status and last update only.
+Detail lives in each task file's Work Log section.
+
+| Task | Owner | Priority | Status | Last Update |
+|---|---|---|---|---|

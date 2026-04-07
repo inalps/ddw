@@ -1,0 +1,22 @@
+# Decision Log — {project name}
+
+Index of all decisions. Individual decision files are in `{workflowDir}/decisions/`.
+
+**Decision status values:**
+
+| Status | Meaning | TASK creation |
+|---|---|---|
+| `proposed` | Under discussion — not yet confirmed | **Not allowed** |
+| `decided` | Owner has explicitly confirmed | Allowed |
+| `rejected` | Will not be implemented | Not applicable |
+| `parked` | Deferred indefinitely | Not applicable |
+
+A DECISION moves from `proposed` to `decided` only when the Owner explicitly confirms it.
+Milestone assignment is **optional** at `proposed`, **required** before `decided`.
+
+---
+
+<!-- Synced from decision files (active + archive). Rows are never deleted — only added or updated. Source of truth: decision files. -->
+
+| ID | Title | Owner | Status | Datetime |
+|---|---|---|---|---|
