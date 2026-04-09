@@ -1,6 +1,6 @@
 # Retrospective Log — {project name}
 
-<!-- Synced from task files (active + archive). Entries are never deleted — only added. Source of truth: task files' ## Retrospective sections. -->
+<!-- Synced from task files (active + archive). Entries are never deleted — only added. Ordered by datetime, newest first. Source of truth: task files' ## Retrospective sections. -->
 
 Learnings captured after each task. Fed back into guardrails, invariants, and workflow improvements.
 

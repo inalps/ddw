@@ -1,6 +1,6 @@
 # Change Log — {project name}
 
-<!-- Synced from task files (active + archive). Entries are never deleted — only added. Source of truth: task files' ## Changes sections. -->
+<!-- Synced from task files (active + archive). Entries are never deleted — only added. Ordered by datetime, newest first. Source of truth: task files' ## Changes sections. -->
 
 Records system changes after implementation.
 Updated after a task is completed.

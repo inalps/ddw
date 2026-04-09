@@ -47,7 +47,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
    ```
    **Summary:** {2-4 sentences: what changed, what files/systems affected, test count if applicable}
    ```
-   Then re-sync `CHANGE_LOG.md` from all done task files so it reflects this task immediately.
+   Then re-sync `CHANGE_LOG.md` from all done task files so it reflects this task immediately. Order entries by datetime, newest first.
 
 8. **CURRENT_SPEC (mandatory, tiered)** — spec review is required on every task close:
    - If `specPath` is null or the spec file doesn't exist, skip and warn: "No spec configured. Consider running `/ddw:init` to set one up."
@@ -78,7 +78,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     b. If the feedback implies a new invariant → propose it (owner approves)
     c. If the feedback implies a guardrail change → update GUARDRAILS.md
     d. If the feedback implies a workflow improvement → note it for WORKFLOW.md
-    e. Re-sync `RETRO_LOG.md` from all done task files.
+    e. Re-sync `RETRO_LOG.md` from all done task files. Order entries by datetime, newest first.
 
     If the user says "nothing" or skips → fill the section:
        ```
