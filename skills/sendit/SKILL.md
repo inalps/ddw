@@ -21,12 +21,29 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
 3. **Verify the linked decision is `decided`** — read the task's `**Decision:**` field. If it references a decision, confirm its status is `decided`. If not, block and explain.
 
-4. **Check for session handoff** — read the task's `## Session Handoff` section.
-   - If it contains handoff content (not just the template placeholder):
-     - Display a summary: "Resuming from previous session — {completed summary}. Next up: {next actions}."
-     - If there are blockers listed, flag them.
-     - Clear the handoff section content (leave the heading and placeholder comment).
-   - If empty or placeholder only, skip this step.
+4. **Check for session handoff** — read the task's `## Session Handoff` section. Parse the structured fields:
+   - `**Status:**` — in_progress, blocked, or none
+   - `**Completed ACs:**` — list of AC IDs already passed
+   - `**Remaining ACs:**` — list of AC IDs still to do
+   - `**Files touched:**` — files modified so far
+   - `**Blockers:**` — any blockers or "none"
+   - `**Next action:**` — what to do next
+   - `**Context:**` — non-obvious state (e.g., "tried approach X, failed because Y")
+
+   If Status is not "none" (handoff has content):
+   - Display a structured resume summary:
+     ```
+     Resuming from previous session:
+     ✅ Completed: {Completed ACs}
+     🔲 Remaining: {Remaining ACs}
+     📁 Files touched: {files list}
+     ➡️  Next: {Next action}
+     ```
+   - If Blockers is not "none", flag prominently: "⚠️ Blockers: {blockers}"
+   - If Context has content, display as advisory: "💡 Context: {context}"
+   - Clear the handoff section — reset all fields to template defaults (Status: none, lists: [], others: empty).
+
+   If Status is "none" or all fields are empty/placeholder, skip this step.
 
 5. **Load developer profile** — read the `agents/developer.md` bundled with the DDW plugin (plugin root, not project directory). Adopt its mindset for implementation:
    - Spec-first: read all docs before coding
@@ -56,7 +73,14 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
    - If branch doesn't exist: `git checkout -b task/{task-id}`
    - If not on main/master when creating a new branch: warn "You're on branch '{current}'. Feature branches are normally created from main." but allow.
 
-8. **Read guardrails** at `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists).
+8. **Read guardrails (tiered):**
+   - Read `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists): scan headings and rule names first, then read only sections relevant to this task's scope and files.
+   - Read `{workflowDir}/guardrails/INVARIANTS.md` fully — these are compact, machine-testable rules and must all be respected during implementation.
+
+8.5. **Read spec (tiered)** — if `specPath` is configured in ddw.json:
+   - Read headings/section names from the spec first.
+   - Read only sections relevant to this task's scope and affected files.
+   - Skip unrelated domain areas — they waste context without aiding implementation.
 
 9. **Read the task** — Scope, Constraints, Files, Completion Criteria sections.
 

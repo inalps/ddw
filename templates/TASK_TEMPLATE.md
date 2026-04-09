@@ -55,14 +55,16 @@ Expected files or systems affected.
 // - Interpretation: any assumption made — state it for Owner to confirm
 
 ## Session Handoff
-<!-- Fill when ending a session mid-task. Clear when resuming. -->
+<!-- Auto-populated by hook on session end. Parsed by /ddw:sendit on resume. -->
+<!-- Clear this section when resuming (sendit step 4 does this automatically). -->
 
-<!-- ### {UTC datetime} — Session paused -->
-<!-- - **Completed:** what's been done so far -->
-<!-- - **Next:** what to do next (specific, actionable) -->
-<!-- - **Blocked:** any blockers or decisions needed from owner -->
-<!-- - **Key context:** non-obvious state the next session needs to know -->
-<!--   (e.g., "tried approach X, failed because Y — don't retry") -->
+- **Status:** none
+- **Completed ACs:** []
+- **Remaining ACs:** []
+- **Files touched:**
+- **Blockers:** none
+- **Next action:**
+- **Context:**
 
 ## Tests
 // Fill when tests are written during implementation.

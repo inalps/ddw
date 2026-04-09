@@ -14,12 +14,12 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `specPath`, `autoUpdateSpec`, and `testCommand`. Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync all logs** — Sync all five log files from source files. Scan **both** active directories and `archive/` subdirectories. **Never delete existing rows** — only add missing entries and update existing entries (e.g., status changes). Logs are a permanent record.
+1.5. **Sync essential logs** — Sync only the logs needed upfront. Scan **both** active directories and `archive/` subdirectories. **Never delete existing rows** — only add missing entries and update existing entries. Logs are a permanent record.
    - `TASK_LOG.md` — from `TASK-*.md` files in `tasks/` and `tasks/archive/`: extract Owner, Status, Date, last Work Log timestamp. Add missing rows, update status of existing rows.
    - `DECISION_LOG.md` — from `DEC-*.md` files in `decisions/` and `decisions/archive/`: extract ID, Title, Owner, Status, Date. Add missing rows, update status of existing rows.
-   - `PRD_LOG.md` — from `PRD-*.md` files in `prds/` and `prds/archive/`: extract ID, Title, Owner, Status, Date. Add missing rows, update status of existing rows.
-   - `CHANGE_LOG.md` — from `TASK-*.md` files with `done` status (both active and archive): extract `## Changes` section content. Add missing entries, never remove existing ones.
-   - `RETRO_LOG.md` — from `TASK-*.md` files with `done` status (both active and archive): extract `## Retrospective` section content. Add missing entries, never remove existing ones.
+   - Defer `CHANGE_LOG.md` sync to step 7 (when Changes section is filled).
+   - Defer `RETRO_LOG.md` sync to step 12 (when retrospective is recorded).
+   - Defer `PRD_LOG.md` sync to step 13c (during archive and final sync).
 
 2. **Read the task file** at `{workflowDir}/tasks/TASK-{date}-{title}.md` to understand what was implemented.
 
@@ -49,9 +49,11 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
    ```
    Then re-sync `CHANGE_LOG.md` from all done task files so it reflects this task immediately.
 
-8. **CURRENT_SPEC (mandatory)** — spec review is required on every task close:
+8. **CURRENT_SPEC (mandatory, tiered)** — spec review is required on every task close:
    - If `specPath` is null or the spec file doesn't exist, skip and warn: "No spec configured. Consider running `/ddw:init` to set one up."
-   - Read the spec file at `specPath` and the completed task's changes.
+   - Read the spec's headings/section structure first.
+   - Read the task's `## Changes` section (from step 7) to identify what behavior changed.
+   - Read only the spec sections affected by those changes — skip unrelated domain areas.
    - **If the task changed spec-visible behavior** — update the relevant sections of the spec to reflect the new reality. Use the structure from the plugin's `templates/CURRENT_SPEC_TEMPLATE.md` as reference for section format. For each section updated, set or replace the `> Shaped by:` reference line with the current task and decision IDs (e.g., `> Shaped by: TASK-20260406-auth-flow | DEC-20260401-auth-redesign`). Show the user what changed.
    - **If the task is purely internal** (refactoring, tests, tooling — no behavior change) — the owner must explicitly confirm: "This task doesn't affect the spec. Skip spec update?" Log the skip reason in the task's `## Changes` section: `Spec update: skipped — {reason}`.
    - This step runs regardless of the `autoUpdateSpec` config value. The config controls whether the update happens silently (true) or with confirmation (false), but the review always happens.
