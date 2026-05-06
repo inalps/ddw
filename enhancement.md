@@ -27,6 +27,18 @@ This document captures decisions only. Reasoning is included where the *why* cha
 - **Auto-spawn worktrees without confirmation** — filesystem actions in shared/team contexts need explicit gates.
 - **Spec splitting (CURRENT_SPEC by domain)** — treats symptom; the root cause is `autoUpdateSpec: true` running on every close. Fix that instead (see §8).
 
+### Delivery mechanism — `@import` directive
+
+Plugin ships `templates/CLAUDE_RULES.md` (the 6 rules, verb-form so language-agnostic). `/ddw:init` writes a single import line into the consumer's CLAUDE.md:
+
+```
+@${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md
+```
+
+Claude Code's CLAUDE.md import resolves at load time. The plugin **never edits consumer CLAUDE.md again** after `/ddw:init`. Plugin-side rule changes propagate automatically; user-side rules and team conventions live above/below the import line, owned entirely by the consumer.
+
+Uninstall = remove the line. No string-surgery, no marker blocks, no merge protocol to maintain.
+
 ---
 
 ## 2. Framework Abstraction — Language-Agnostic
@@ -116,6 +128,26 @@ One canonical source. Edit once, all worktrees see the change. Delete a worktree
 - macOS / Linux native; Windows has symlink permission issues. If a teammate is on Windows, `setup-worktree.sh` needs a `cp` fallback (accepts the trade-off of more secret copies).
 - Don't symlink things meant to be per-worktree (e.g., per-task DB configs).
 
+### `setup-worktree.sh` contract (Phase A — minimal)
+
+```
+scripts/setup-worktree.sh TASK-A [--base TASK-X]
+```
+
+Steps:
+
+1. Compute target dir from `ddw.json.worktree.taskDir` (default `.worktrees/{TASK_NAME}`).
+2. **Branch collision check:** if `task-a` already exists, exit 1 — never reuse a stranger's branch.
+3. `git worktree add <dir> -b task-a <base>` — base = `main` by default, or `task-x` if `--base` given (for dependency tasks).
+4. **Port offset:** count existing `.worktrees/TASK-*/` dirs (n), set `PORT_OFFSET=$((n * 100))` in the new worktree's `.env.local`. Project's `commands.dev` honors it. If `n+1 > worktree.maxConcurrent`, warn but don't block.
+5. **Sync files:** `ln -s` each entry in `worktree.syncFiles` from main repo into the new worktree. macOS/Linux only for now.
+6. Run `commands.install` if dependency dir missing.
+
+**Deferred until needed (post-onboarding):**
+- Slot tracking (currently just count-based; collision possible if a worktree is deleted out-of-order)
+- Windows `cp` fallback
+- `worktree.maxConcurrent` hard enforcement
+
 ---
 
 ## 4. Staging — Auto-Stage with FIFO Queue
@@ -162,6 +194,40 @@ Both call standalone script: `ddw-queue tick`. Deterministic, can also be invoke
 
 If integration ever becomes shared across machines, need real cross-machine locking. Per-machine integration is the current model — defer that complexity until it's actually painful.
 
+### Queue mechanics contract
+
+**Locality decision: per-machine.**
+
+`.ddw/integration.json` is **gitignored**. Each developer's integration worktree is local to their machine; the queue is local to their machine. This sidesteps cross-machine race conditions entirely. If shared integration ever becomes desirable, that's a future feature with its own locking design — not a default.
+
+**State storage (consumer repo):**
+- `.ddw/integration.json` → `{"testing": "TASK-X" | null}`. Single tiny file, single writer (the staging scripts), gitignored.
+- Queue itself = derived: glob task files in `paths.tasks`, filter `status: ready_for_integration`, sort by `ready_at` ASC.
+- `ready_at` lives in task frontmatter (committed) — that's a durable record of "was ready at time T," not queue state.
+
+**Branch convention:** `task-{id-lowercased}`. TASK-A → branch `task-a`. Created by `setup-worktree.sh`.
+
+**`ready_at` write point:** `/ddw:sendit` writes ISO timestamp to task frontmatter when flipping `status → ready_for_integration`. Single point of write — no ambiguity.
+
+**`ddw-stage TASK-X` steps:**
+1. Verify `integration.json.testing == null`. Else error.
+2. **Refuse if integration worktree has uncommitted changes** — don't merge over WIP.
+3. cd to integration worktree → `git merge task-x`.
+4. Conflict → abort merge, exit non-zero, integration stays idle.
+5. **Migration detection:** if `ddw.json.migrationGlob` matches files in the diff and `commands.migrate` is defined → run migration. Else warn and skip.
+6. Write `{"testing": "TASK-X"}` to `.ddw/integration.json`.
+
+**`ddw-unstage TASK-X` steps:**
+1. Verify `integration.json.testing == "TASK-X"`.
+2. cd to integration worktree → `git reset --hard HEAD~1`.
+3. Flip task status `ready_for_integration → in_progress` in task frontmatter.
+4. Clear `integration.json.testing`.
+5. Call `ddw-queue tick`.
+
+**Priority override:** `ddw-stage TASK-C` while TASK-X is testing → prompts "TASK-X is testing; unstage it? (y/n)". On yes, unstages X (X keeps its original `ready_at` so it returns to its FIFO position, head of queue), stages C. No auto-restart of X — user explicitly displaced it.
+
+**Dependency tasks (B based on A):** `setup-worktree.sh TASK-B --base TASK-A` branches from `task-a` instead of `main`. When A closes (merges to main), `ddw-stage TASK-B` works because B already contains A's commits.
+
 ---
 
 ## 5. Dev / QA Subagent Loop
@@ -184,11 +250,79 @@ Main session (orchestrator on `main`)
 - `agents/ddw-dev.md` — Dev role, includes loop logic
 - `agents/ddw-qa.md` — QA role: read-only, fresh reader, structured feedback
 
+Both files use Claude Code subagent format: YAML frontmatter (`name`, `description`, `tools`) on top, system prompt body underneath. Existing `agents/qa.md` and `agents/developer.md` (profile-style, no frontmatter) are renamed and gain frontmatter — the body content is the system prompt.
+
+`ddw-` prefix avoids collision with consumer-project subagents — applied to **all** plugin agents: `ddw-shaper`, `ddw-architect`, `ddw-dev`, `ddw-qa`.
+
+**Provider portability — recommend models in body, don't pin in frontmatter.**
+
+Claude Code can be backed by Anthropic API, Amazon Bedrock, or Google Vertex AI. Full model IDs (`claude-opus-4-7`) are provider-specific and break across backends. Aliases (`opus`/`sonnet`/`haiku`) are portable but resolve to *different versions* per provider. The plugin's portable default: **omit `model:` from frontmatter** so the subagent inherits the parent session's model.
+
+Each agent body documents a recommended alias as guidance for users who want to override via `/agents`:
+
+| Agent | Recommended | Rationale |
+|---|---|---|
+| `ddw-shaper` | `opus` | Problem-shaping needs deepest reasoning |
+| `ddw-architect` | `opus` | Architectural decisions benefit from capability |
+| `ddw-dev` | `sonnet` | Implementation throughput at balanced cost |
+| `ddw-qa` | `sonnet` | Adversarial review effective at sonnet tier |
+
+Recommendations live in agent body markdown (not frontmatter) — advisory only; the user's `/agents` config wins. Never use full model IDs in any plugin-shipped agent file.
+
 ### QA agent constraints:
 
-- **Tools:** Read, Grep, Glob, Bash (for running tests). **No Edit, no Write.**
-- **No memory access** — fresh reader is the entire point. Bias separation collapses if QA carries dev's context.
-- **Returns structured feedback:** `[{file, line, severity, problem, suggestion}]`.
+- **Tools (frontmatter-enforced):** `Read, Grep, Glob, Bash`. **No Edit, Write, Task, TodoWrite.**
+- **No memory access** — instruction-based, not enforced (Claude Code subagents still load CLAUDE.md). The agent body includes one explicit line: *"You operate as a fresh reader. Do not consult or apply any memory of prior conversations or per-user preferences."* Bias separation is a cognitive goal, not a security boundary.
+- **Returns structured feedback** per the contract below.
+
+> **Phase scope:** Phase B ships the **agent rename + frontmatter** so subagents are invokable. The structured-findings JSON contract, 3-iteration loop, dispute mechanism, and `qa_iterations` frontmatter accumulation below are **deferred to post-onboarding** — they're documented intent, not week-1 code. Until then, dev subagent invokes QA, parses prose response, and surfaces findings to the human. Iterate based on real failure modes the team hits.
+
+### Invocation contract (Dev → QA):
+
+Dev calls QA via the Task tool, `subagent_type: ddw-qa`, with this prompt shape:
+
+```
+Review TASK-X (file: tasks/TASK-X.md).
+Iteration: <n>
+Changed files (git diff vs base): <list>
+Prior findings + dispute resolutions: <embedded from iteration n-1, if any>
+Run commands.test from ddw.json before reporting.
+Return prose report + JSON findings block per the ddw-qa contract.
+```
+
+### Return contract (QA → Dev):
+
+QA's final message has three sections, in this order:
+
+```markdown
+## QA Report
+[evidence-based prose, existing qa.md style]
+
+## Findings
+\```json
+[
+  {
+    "id": "qa-{iteration}-{index}",
+    "severity": "critical | high | low",
+    "category": "AC | invariant | owasp-A01 | a11y | perf | bug",
+    "file": "<path>",
+    "line": <int>,
+    "problem": "<description>",
+    "suggestion": "<actionable fix>",
+    "evidence": "<INV-ref or AC-ref or quoted code>"
+  }
+]
+\```
+
+## Scope Applied
+- AC: yes/no
+- Invariants: yes/no
+- OWASP: <subset> (skipped: <subset> — reason)
+- a11y: yes/skipped — <reason>
+- Perf: yes/skipped — <reason>
+```
+
+Dev parses the JSON block (fenced) for routing. `id` enables the dispute mechanism. `category` lets dev triage fixes.
 
 ### Loop policy (decided):
 
@@ -198,6 +332,43 @@ Main session (orchestrator on `main`)
 | Fail-closed | **Yes** — crash, malformed output, timeout → block + escalate |
 | Each iteration | Prints summary to terminal (visibility + audit trail) |
 | Dev disputes QA | Must justify in task file. 2+ disputes in one iteration → escalate (signal that AC isn't crisp enough) |
+
+### Iteration state — task file frontmatter
+
+Iteration history lives in the task file (source-of-truth aligned with §8). Frontmatter holds the index; the full findings JSON is appended to the task body's Review Log.
+
+```yaml
+qa_iterations:
+  - n: 1
+    result: fail
+    counts: { critical: 2, high: 1, low: 3 }
+    summary: "AC item 3 unmet; INV-B-...-score violated"
+    disputes: []
+  - n: 2
+    result: fail
+    counts: { critical: 0, high: 1, low: 3 }
+    summary: "scoring fixed; layout still off"
+    disputes:
+      - finding_id: "qa-2-1"
+        justification: "constraint X documented in DEC-42 §Y"
+```
+
+Survives crash, audit-trail in one place, no separate state file.
+
+### Escalation handoff (loop exit)
+
+Triggered when iteration count = 3 with unresolved Critical/High, OR fail-closed condition (QA crash, malformed output, timeout), OR ≥2 disputes in one iteration. Dev's final message to main session is plain text:
+
+```
+QA escalation — TASK-X
+Iterations: <n>
+Outstanding: <C> critical, <H> high
+Reason: <max-iterations | fail-closed | excessive-disputes>
+See: tasks/TASK-X.md (Review Log)
+Status: ready_for_integration NOT emitted. Queue not advanced.
+```
+
+`ready_for_integration` is **not** emitted; `ddw-queue tick` is **not** called. Human takes over.
 
 ### Severity tiers:
 
@@ -243,6 +414,8 @@ Revisit once team is onboarded and we have data on which class of bugs is slippi
 ---
 
 ## 6. `/ddw:audit` Skill (Framework-Level)
+
+> **Phase scope:** **Deferred to post-onboarding.** Manual `pnpm audit` (or equivalent) suffices until first vuln triage demands the framework. The full design below is preserved as future reference. Plugin ships **one** reference adapter at most when this lands; long-tail ecosystems (npm, pip, cargo, bun, deno, gradle, …) are community contributions, never bundled.
 
 ### Purpose:
 
@@ -292,6 +465,39 @@ Allowlist entry shape:
 
 First `/ddw:audit` against current lockfile will likely surface dozens of transitive vulns. Plan a focused 30–60 min triage session: fix-now (upgrade), allowlist-with-reason-and-expiry, or block-until-upstream-patches. After that, audit goes quiet because lockfile-hash check skips re-runs when deps haven't changed.
 
+### Parser strategy — normalized JSON contract
+
+Different ecosystems emit different audit formats (`pnpm audit --json` vs `cargo audit --json` vs `pip-audit --format=json`). Plugin **does not** parse N tools — that leaks toolchain knowledge into the framework (against §2 principle).
+
+Instead, `commands.audit` is expected to emit this normalized JSON on stdout:
+
+```json
+{
+  "vulnerabilities": [
+    {
+      "id": "GHSA-xxxx-yyyy-zzzz",
+      "package": "axios",
+      "severity": "critical | high | moderate | low",
+      "advisory_url": "https://...",
+      "vulnerable_versions": "<1.6.0",
+      "current_version": "1.5.0"
+    }
+  ]
+}
+```
+
+`/ddw:audit` consumes this format directly — applies allowlist, severity threshold, writes `AUDIT_LOG.md`.
+
+**Reference adapters shipped with the plugin:**
+
+`adapters/audit-pnpm.mjs`, `adapters/audit-npm.mjs`, `adapters/audit-pip.mjs`, `adapters/audit-cargo.mjs` — each takes native tool output on stdin, emits normalized JSON on stdout. Project's `commands.audit` typically becomes:
+
+```jsonc
+"audit": "pnpm audit --json | node ${CLAUDE_PLUGIN_DIR}/adapters/audit-pnpm.mjs"
+```
+
+Unsupported ecosystem? Project writes its own adapter, same contract. Plugin maintenance scales with ecosystems we choose to bless, not with every audit tool that exists.
+
 ---
 
 ## 7. Verification Gates
@@ -308,9 +514,9 @@ First `/ddw:audit` against current lockfile will likely surface dozens of transi
 - Runs Invariant scan
 - Runs the QA scope items from §5
 
-### Optional hook (belt-and-suspenders):
+### No Claude Code hooks for verification (decided):
 
-PostToolUse on Edit → background `commands.typecheck` on the affected package. Add only if the sendit gate fails to stick in practice.
+Earlier drafts considered a PostToolUse hook running `commands.typecheck` after every Edit as a belt-and-suspenders. **Rejected** — §4 establishes "no Claude Code hooks for workflow events; modify skill markdown instead" and that rule applies here too. Verification is a skill responsibility (the `/ddw:sendit` gate). If the gate proves unreliable in practice, revisit then — don't pre-emptively scatter logic.
 
 ---
 
@@ -338,6 +544,10 @@ There is **one** task template. Sections render conditionally based on task prop
 - No promotion/demotion ceremony when scope grows mid-task: a section just starts rendering when its trigger condition becomes true.
 - Reviewers see exactly what was relevant for the task, no boilerplate "N/A" noise.
 - Metrics still derivable: "tasks where retro was skipped" + "tasks with no DEC linked" gives the same view a `tier: micro` field would give.
+
+**Rendering: at task-creation time (not view-time).**
+
+`/ddw:task` skill emits only the conditional sections that apply, based on the author's answers (DEC linked? scope ≥ 2hr? multi-session expected?). Mid-task scope growth: `/ddw:task add-section <name>` inserts a missing section in place. View-time rendering rejected because it leaves placeholder/conditional content in raw task files — confusing in source form, and breaks `ddw-index`'s deterministic frontmatter consumption.
 
 The audit trail (who, what, when, why, what changed, QA outcome) is preserved in every task file regardless of which sections rendered.
 
@@ -409,46 +619,126 @@ At ~150 task files, full rebuild takes well under a second. At 10x growth, ~5-10
 **Eliminations (explicit):**
 
 - `CHANGE_LOG.md` — deleted, never regenerated. Git is the source of truth.
-- `TASK_LOG.md`, `RETRO_LOG.md`, `MILESTONES.md` — repurposed as generated read-only mirrors.
+- `TASK_LOG.md`, `RETRO_LOG.md`, `MILESTONES.md`, `DECISION_LOG.md`, `PRD_LOG.md` — repurposed as generated read-only mirrors.
 
 This subsumes the original "Insight 4 fragment + lock" approach. Single-writer per file is the simpler primitive — achieved by giving each task its own file.
 
-### PRD lifecycle and archival path:
+### `ddw-index` contract
 
-Currently `templates/logs/PRD_LOG.md` defines three PRD statuses: `draft`, `solid`, `parked`. There's no path for what happens after `solid` once a DEC is decided, and no archival mechanism — PRDs accumulate indefinitely.
+**Language & location:** Node, single file `scripts/ddw-index.mjs` in the plugin repo. Zero npm deps (hand-rolled YAML frontmatter parser; only string/number/array/date — no anchors, no deep nesting). Skills paper over the path via `${CLAUDE_PLUGIN_DIR}`.
 
-**Three new statuses added:**
+**Inputs (consumer repo, paths configurable in `ddw.json`):**
 
-| Status | Meaning | Transition | Archives? |
-|---|---|---|---|
-| `building` | At least one linked DEC is in progress | Auto from `solid` when first linked DEC is created. Auto → `done` when all linked DECs close. | No |
-| `done` | All linked DECs closed; work shipped | Auto-archive immediately on entry | **Yes** → `prds/archive/` |
-| `cancelled` | Rejected or abandoned | Manual; auto-archives at transition | **Yes** → `prds/archive/` |
+```json
+"paths": {
+  "tasks":     "tasks",
+  "decisions": "decisions",
+  "prds":      "prds",
+  "logs":      "logs"
+}
+```
 
-**Existing statuses unchanged:** `draft`, `solid`, `parked`.
+Reads from both live and `archive/` subdirs of each path.
 
-**Status transitions are derived by `ddw-index`** (same model as the log views). The owner manually drives only:
-- `draft → solid` (shaping complete)
-- `* → parked` / `parked → solid` (explicit pause/resume)
-- `* → cancelled` (explicit kill)
+**Outputs (consumer repo, in `paths.logs`):**
 
-Everything else (`solid → building → done → archive`) is automatic and inferred from DEC states.
+Each view file gets an auto-generated header:
 
-**Linkage:**
-- PRD frontmatter: `decisions: [DEC-A, DEC-B]` — the DECs implementing this PRD
+```markdown
+<!-- AUTO-GENERATED by ddw-index. Do not edit. Edit task/DEC/PRD files instead. -->
+<!-- Last regenerated: 2026-05-07T12:34:56+09:00 -->
+```
+
+| File | Source | Sort |
+|---|---|---|
+| `TASK_LOG.md` | task files | `closed_at desc`; in-progress at top |
+| `RETRO_LOG.md` | task Retrospective sections | `closed_at desc` |
+| `MILESTONES.md` | DEC files | `closed_at desc` |
+| `DECISION_LOG.md` | DEC files | `decided_at desc` |
+| `PRD_LOG.md` | PRD files | by status, then `created_at desc` |
+
+**Frontmatter schemas consumed (additional fields ignored for forward-compat):**
+
+```yaml
+# task
+id: TASK-A
+status: in_progress | ready_for_integration | closed | abandoned
+created_at: ...
+started_at: ...
+ready_at: ...                       # for §4 queue ordering
+closed_at: ...
+dec: DEC-12                         # optional
+files_changed: [...]
+qa_iterations: [...]                # deferred per §5 Phase scope; tolerated when present
+
+# DEC
+id: DEC-12
+status: proposed | decided | in_progress | closed | parked | cancelled
+prd: PRD-X                          # optional, back-link
+title: "..."
+created_at: ..., decided_at: ..., closed_at: ...
+
+# PRD
+id: PRD-X
+status: draft | solid | parked | closed
+decisions: [DEC-12, DEC-13]         # forward-link
+title: "..."
+created_at: ...
+```
+
+**`ddw-index` is strictly pure — no source mutations.**
+
+`ddw-index` only reads frontmatter and writes view files. It does **not** mutate task/DEC/PRD frontmatter, does **not** move files, does **not** archive. Pure transformation. Pre-commit `--check` mode never has surprising side effects.
+
+Task, DEC, and PRD archival is **not** ddw-index's job — `/ddw:close` and `/ddw:prd close` do that at close time.
+
+**CLI surface:**
+
+```
+ddw-index                  # full rebuild from scratch
+ddw-index --check          # exit 1 if any view file would change (pre-commit/CI gate)
+ddw-index --root <path>    # consumer repo root (default: cwd)
+ddw-index --dry-run        # print planned changes, write nothing
+```
+
+`--check` is the linchpin for git/CI integration: diffs planned output against on-disk and exits non-zero on drift.
+
+**Trigger model — on-demand only:**
+
+The plugin **does not** install hooks automatically. `/ddw:init` offers (with explicit confirmation) to add a `.git/hooks/pre-commit` running `ddw-index --check`. CI integration is a documented snippet, not pushed config. Skills never call `ddw-index` themselves.
+
+**Error handling — fail-closed:**
+
+Malformed frontmatter (unparseable YAML, missing required `id`/`status`) → exit 1, print file path + reason to stderr, **write no views**. No silent skips.
+
+**Idempotency:** N runs in a row produce identical output (and identical PRD mutations once converged).
+
+### PRD lifecycle — manual close on DEC creation
+
+Earlier drafts had `building`/`done`/`cancelled` automation with `ddw-index` inferring status from linked DECs. **Cut.** The simpler design:
+
+**Statuses (unchanged from today):** `draft`, `solid`, `parked`, `closed`.
+
+**Lifecycle:** when a DEC is created from a PRD:
+1. `/ddw:decision` records "DEC-X created from PRD-Y" on the PRD body
+2. Owner manually sets PRD `status: closed` and moves the file to `prds/archive/`
+
+That's it. No auto-inference, no `building` intermediate state, no `ddw-reconcile` script, no automatic file moves. PRD's job is to capture intent until a decision exists; once the decision exists, the PRD is historical.
+
+**Linkage (still useful for `ddw-index` views):**
+- PRD frontmatter: `decisions: [DEC-A, DEC-B]` — DECs that came out of this PRD
 - DEC frontmatter: `prd: PRD-X` — the PRD that spawned this DEC
-- Bidirectional and `ddw-index`-readable
+
+`ddw-index` reads these to render relationships in `PRD_LOG.md` and `DECISION_LOG.md`. It does **not** mutate them.
+
+**Multi-DEC PRD:** owner closes the PRD when *they* decide it's done — typically after the first DEC, sometimes after several. Manual judgment, no rule.
 
 **Skill changes:**
-- `/ddw:ideate` (existing): unchanged creation flow; produces PRDs that fit the new lifecycle.
-- `/ddw:decision` (existing): when a DEC is created from a PRD, sets the DEC's `prd:` field. `ddw-index` then flips PRD `solid → building`.
-- `/ddw:close` (DEC close): when the last DEC linked to a PRD closes, `ddw-index` flips PRD `building → done` and archives the file.
-- **New:** `/ddw:prd cancel PRD-X` for explicit cancellation.
+- `/ddw:ideate` (existing): unchanged.
+- `/ddw:decision` (existing): when a DEC is created from a PRD, appends "DEC-X created" line to the PRD body and sets the DEC's `prd:` field.
+- `/ddw:prd close PRD-X`: new helper that sets `status: closed` and moves the file to `prds/archive/`. Owner-invoked.
 
-**Edge cases:**
-- **Multi-DEC PRD:** status is `building` while *any* linked DEC is in progress; flips to `done` only when *all* close.
-- **A linked DEC gets cancelled, others remain:** PRD stays in `building`. If *all* linked DECs end up cancelled with no replacement, PRD reverts to `solid` so the owner can re-architect or cancel manually.
-- **Externally-sourced PRDs (Notion, Linear, etc.):** captured via `/ddw:ideate` with an external reference link in the PRD body. The DDW-side artifact is the canonical lifecycle holder regardless of where the original document lives.
+**Externally-sourced PRDs** (Notion, Linear, etc.): captured via `/ddw:ideate` with an external reference link. DDW-side artifact is the canonical lifecycle holder.
 
 ### Triage stale items from current state (one-off cleanup):
 
@@ -487,28 +777,201 @@ These need answers before some of the above can be scripted:
 2. **Are backend services already in a root `docker-compose.yml`?** If per-worktree compose files exist, fix that first — it's the bigger resource problem than dev servers. Verify before implementation order item 5.
 3. **Integration worktree visibility:** `.worktrees/integration` (consistent) or sibling directory (more visible to teammates)?
 4. **Default scheduling for `/ddw:audit`:** weekly via launchd? In CI? Both? (Framework documents options; project picks one.)
-5. **`/ddw:upgrade` migration logic for this enhancement plan:** existing DDW-using projects need to adopt the new `ddw.json` fields, PRD statuses, directory layout, and skill behavior. What does the upgrade flow do — auto-migrate, prompt-then-migrate, or print a manual checklist?
 
-**Migration policy for the current Neu project (decided):** existing artifacts (143 tasks, 44 decisions) are **grandfathered** in their current format. New artifacts use the new framework. Active artifacts (open DECs, `CURRENT_SPEC.md`) migrate incrementally as work continues. No big-bang migration.
+**`/ddw:upgrade` migration framework — deferred until first real migration exists.**
+
+For Phase B and team-onboarding, version skew is prevented by `pluginVersion` pin + version-check on every `/ddw:*` invocation (refuses to run on mismatch). The full migration framework is only needed when the plugin actually ships a breaking schema change; build it then, not preemptively.
+
+**When it does land, the design is:**
+
+- `ddw.json.schemaVersion: <n>` is the canonical version pin in the consumer repo.
+- Plugin ships migrations under `migrations/v{from}-to-v{to}.mjs`. Sequential only — no cross-version jumps in a single step (skipped versions run sequentially).
+- **Transactional:** each step stages all changes in a temp tree, validates, then commits atomically. Mid-step crash = abort, restore working tree. No partial application.
+- **Per-file frontmatter migrations are idempotent** — re-running on same file is a no-op.
+- **Each upgrade step produces exactly one commit** so `git revert HEAD` is a clean rollback.
+- **Downgrade is unsupported.** Rollback path = `git revert` of the upgrade commit + reinstall older plugin version. Documented, not automated.
+
+**Migration policy for the current Neu project (decided):** existing artifacts (143 tasks, 44 decisions) are **grandfathered** in their current format. New artifacts use the new framework. Active artifacts (open DECs, `CURRENT_SPEC.md`) migrate incrementally as work continues. No big-bang migration. Archived task/DEC/PRD files are **never** touched by `/ddw:upgrade`.
 
 ---
 
-## 11. Implementation Order
+## 11. Implementation Roadmap (Phased)
 
-Suggested sequencing (each is one DDW refinement task, cap of 1 open at a time):
+Team starts ~1 week from this plan landing. Roadmap is anchored to that.
 
-1. Port memory rules → CLAUDE.md *(foundation; unblocks team)*
-2. Add `commands.*`, `lockfile`, `testFilePattern` to `ddw.json` schema + skill code refactor *(removes language assumptions)*
-3. Create `agents/ddw-qa.md` and `agents/ddw-dev.md` *(unblocks the loop architecture)*
-4. Create `/ddw:audit` skill + allowlist mechanism + initial triage session
-5. Create staging scripts (`ddw-stage`, `ddw-unstage`, `ddw-queue tick`, `ddw-integration-status`, `ddw-integration-reset`)
-6. Update `/ddw:task` skill: single template with conditional section rendering based on task properties
-7. Update `/ddw:sendit` skill: companion-test gate, queue tick at end
-8. Update `/ddw:close` skill in this order: **(a) conditional retro prompt first**, then archive + log updates, then conditional CURRENT_SPEC update, then queue tick at end
-9. Stabilization gate after phase-level work (typecheck + grep for known failure modes)
-10. One-time triage of stale `proposed` DECs and `kiosk-tenant-switcher`
-11. Migrate logs to derived views: build `ddw-index` script, eliminate `CHANGE_LOG.md`, convert `TASK_LOG.md` / `RETRO_LOG.md` / `MILESTONES.md` to generated mirrors, wire skills to call `ddw-index` at end
-12. PRD lifecycle: add `building` / `done` / `cancelled` statuses, PRD ↔ DEC bidirectional linkage in frontmatter, `prds/archive/` directory, `/ddw:prd cancel` skill, status transition inference in `ddw-index`
-13. Update `GUIDE.md` to reflect the new framework: integration worktree workflow, dev/QA loop, `/ddw:audit`, PRD lifecycle, derived views. Without this, the team-onboarding goal of item 1 is half-done.
+### Phase A — Solo "nicer" test (2-3 days realistic)
+
+Close-path wins + worktree + integration + minimal pure `ddw-index`. Solo-tested before any team scaffolding lands.
+
+1. **Close-path wins** *(skill markdown edits, ~4h)*
+   - Eliminate `CHANGE_LOG.md` from `/ddw:close` writes
+   - Opt-in `CURRENT_SPEC` rewrite (default off)
+   - Skip-retro rule (clean QA + < 2hr + single session)
+   - Conditional task template (single file, sections deletable)
+   - `/ddw:sendit` companion-test gate
+
+2. **`ddw-index` minimal — strictly pure** *(~4-6h)*
+   - Node single-file script `scripts/ddw-index.mjs`, zero deps
+   - Reads task/DEC/PRD frontmatter from `paths.*`
+   - Writes: `TASK_LOG.md`, `RETRO_LOG.md`, `DECISION_LOG.md`, `MILESTONES.md`, `PRD_LOG.md`
+   - **No** mutations of source files. **No** auto-archive. `--check` mode for pre-commit.
+
+3. **PRD lifecycle simplified** *(~1h)*
+   - `/ddw:decision` appends "DEC-X created" line to PRD body, sets `prd:` field on DEC
+   - New `/ddw:prd close PRD-X` helper: sets `status: closed`, moves to `prds/archive/`
+   - Drop `building`/`done`/`cancelled` statuses entirely
+
+4. **Worktree + integration scripts** *(~6-8h)*
+   - `scripts/setup-worktree.sh` minimal: `git worktree add`, symlinks, `PORT_OFFSET` count-based, `--base` flag
+   - `scripts/ddw-stage`, `scripts/ddw-unstage`, `scripts/ddw-queue` (tick subcommand), `scripts/ddw-integration-status`, `scripts/ddw-integration-reset`
+   - `.ddw/integration.json` gitignored, per-machine
+   - `ready_at` field written by `/ddw:sendit`
+
+5. **Frontmatter authority matrix** *(~30min, doc only)*
+   - Written into new §13 of this doc; no enforcement code yet
+
+### Phase B — Team build (1 day target, ~1.5 realistic)
+
+Layers team-essential structure on top of Phase A:
+
+6. **Memory → CLAUDE.md via `@import`** — write the import line into consumer's CLAUDE.md from `/ddw:init`
+7. **`ddw.json` verbs** — `commands.{install,dev,typecheck,test,lint}`, `testFilePattern`, `lockfile`. Refactor every skill that hardcodes `pnpm`/`tsc` to read from `ddw.json`.
+8. **`ddw-` agent rename + frontmatter** — rename `qa.md`→`ddw-qa.md` etc., add YAML frontmatter (name, description, tools), embed recommended-model annotation in body
+9. **JSON schema files** — `schemas/ddw-task.schema.json`, `ddw-dec.schema.json`, `ddw-prd.schema.json`, `ddw.json.schema.json`. Minimal but real. `ddw-index` validates against them.
+10. **`pluginVersion` field + version-check** — `/ddw:*` skills check `ddw.json.pluginVersion` against installed plugin version at start; refuse on mismatch (with `DDW_SKIP_VERSION_CHECK=1` escape hatch)
+11. **Repo-level model pins** — `ddw.json.agents.{shaper,architect,dev,qa}.model` overrides; agent body reads from ddw.json first, then `/agents`, then inherit
+
+### Phase C — Team-mode solo test (2-3 days)
+
+Hit Phase B alone in team-mode workflow. Find sharp edges. Fix. Update GUIDE.md and write a short ONBOARDING.md walkthrough.
+
+12. **GUIDE.md update** — reflect the new framework end-to-end
+13. **ONBOARDING.md** — day-1 walkthrough for a new teammate
+14. **One-time triage of stale `proposed` DECs and `kiosk-tenant-switcher`**
+15. Stabilization gate before onboarding (typecheck + grep for known failure modes)
+
+### Deferred — build post-onboarding when triggered
+
+Not in the team-launch scope. Documented in earlier sections as future reference:
+
+- `/ddw:audit` framework (§6) — manual `pnpm audit` until first vuln triage
+- `/ddw:doctor` diagnostic — when team hits opaque weirdness
+- Plugin CI + golden-file tests + fixture repo
+- Migration framework (§10) — built with first real migration
+- Dev/QA structured-findings JSON contract, 3-iteration loop, dispute mechanism (§5) — basic prose-response QA suffices for now
+- Long-tail audit adapters (npm/pip/cargo/bun/deno/gradle/…) — community contributions, never bundled
+- Plugin-side observability/metrics
+
+### Cut — don't build
+
+- Marker-block CLAUDE.md surgery (replaced by `@import`)
+- Worktree slot/port assignment math (count-based for now)
+- Windows `cp` fallback for syncFiles (macOS/Linux only)
+- `worktree.syncFiles` complex orchestration — keep simple symlink only
+- PRD `building`/`done`/`cancelled` automation + `ddw-reconcile`
+- DEC dispute path — revisit only if team friction surfaces it
 
 i18n, observability, and notification upgrades stay parked.
+
+---
+
+## 12. Reversibility & Safeguards
+
+Every decision in this plan must be rewindable — at the code level and, within reason, at the operational level. The honest accounting:
+
+### Trivially reversible (just `git revert`)
+
+- All plugin code edits (scripts, agents, skills, templates)
+- Agent file rename (`qa.md` → `ddw-qa.md`)
+- New `ddw.json` fields (additive — old configs still parse)
+- Generated views (`TASK_LOG.md` etc. — regenerated from source on next ddw-index run)
+- Branch convention (`task-{id}` — old branches keep working; new ones just follow the rule)
+- State files (`.ddw/integration.json` — delete = reset)
+
+### Reversible with minor cleanup
+
+- **PRD archive moves** — `git mv` back, or just `mv` if uncommitted. Files always exist at *some* path.
+- **Task frontmatter additions** (`ready_at`, etc.) — strictly additive. ddw-index tolerates missing fields.
+- **CLAUDE.md `@import` line** — single line, removable in one edit.
+
+### Reversible with operational friction
+
+- **`CHANGE_LOG.md` elimination** — file-level reversible (re-add template, re-add write to `/ddw:close`). Team-shared consumer repos where everyone deleted theirs need coordinated rollback. Friction is social, not technical.
+- **Plugin schema upgrade** (v_n → v_{n+1}) — no first-class **down**-migration. Rollback path is `git revert` of the upgrade commit in the consumer repo. Works cleanly because each upgrade step is a single commit.
+
+### Effectively irreversible
+
+None at the code level. The only honest cost is **behavioral memory**: once a team has internalized the new flow, reverting means re-training. The §9 kill criterion (2-week window) is calibrated against this — short window, low people-cost on revert.
+
+### Safeguards baked into the design
+
+To keep "rewindable" honest, these constraints apply across all picks:
+
+1. **`/ddw:upgrade` refuses dirty trees.** Before mutating frontmatter or moving files, require a clean working tree (or `--force` with explicit confirmation).
+2. **`ddw-index` writes only via explicit invocation.** Pre-commit `--check` exits 1 on drift; user runs `ddw-index` manually, sees the diff, commits. View regen never sneaks in unobserved.
+3. **`setup-worktree.sh` checks branch collisions.** If `task-{id}` already exists, error out — never reuse a stranger's branch.
+4. **`ddw-stage` warns before destructive merge.** If integration worktree has uncommitted changes, refuse.
+5. **Plugin migrations are commit-isolated.** Each `/ddw:upgrade` step produces one commit. `git revert HEAD` is a clean rollback.
+
+---
+
+## 13. Frontmatter Authority Matrix
+
+Every mutable frontmatter field has exactly **one writer**. All other code paths read only. Violations are bugs.
+
+### Task frontmatter
+
+| Field | Writer | Notes |
+|---|---|---|
+| `id`, `title`, `created_at` | `/ddw:task` (creation) | Never re-written |
+| `dec`, `files_changed` (initial) | `/ddw:task` | At creation |
+| `started_at` | dev subagent | When work begins in worktree |
+| `status: in_progress` | `/ddw:task` | At creation |
+| `status: ready_for_integration` | `/ddw:sendit` | Gate-passed flip |
+| `status: closed`, `closed_at` | `/ddw:close` | At close |
+| `status: abandoned` | `/ddw:close --abandon` | Explicit |
+| `ready_at` | `/ddw:sendit` | Same write as `status: ready_for_integration` |
+| `files_changed` (updates) | dev subagent / `/ddw:close` | Append-on-edit |
+
+Read-only consumers: `ddw-index`, `ddw-stage`, `ddw-unstage`, `ddw-queue`, `/ddw:doctor`.
+
+### DEC frontmatter
+
+| Field | Writer | Notes |
+|---|---|---|
+| `id`, `title`, `created_at`, `prd` | `/ddw:decision` (creation) | At creation |
+| `status: proposed → decided` | `/ddw:decision` | When confirmed |
+| `decided_at` | `/ddw:decision` | Same write as `decided` |
+| `status: decided → in_progress` | `/ddw:task` (first task linked) | Auto-flip on first task creation |
+| `status: in_progress → closed` | `/ddw:close` (last task) | When last linked task closes |
+| `closed_at` | `/ddw:close` | Same write |
+| `status: parked / cancelled` | `/ddw:decision park / cancel` | Owner-driven |
+
+Read-only consumers: `ddw-index`, all task skills, `/ddw:doctor`.
+
+### PRD frontmatter
+
+| Field | Writer | Notes |
+|---|---|---|
+| `id`, `title`, `created_at` | `/ddw:ideate` (creation) | Never re-written |
+| `status: draft / solid / parked` | Owner via `/ddw:prd` helpers | Manual transitions |
+| `status: closed` | `/ddw:prd close` | Owner-invoked |
+| `decisions: [...]` | `/ddw:decision` | Append-on-DEC-creation |
+
+Read-only consumers: `ddw-index`, `/ddw:doctor`. **`ddw-index` does not mutate PRD frontmatter** — pure reader.
+
+### `ddw.json`
+
+| Field | Writer | Notes |
+|---|---|---|
+| All fields | Owner / `/ddw:init` / `/ddw:upgrade` | Manual or skill-driven; never written by runtime scripts |
+
+### `.ddw/integration.json`
+
+| Field | Writer | Notes |
+|---|---|---|
+| `testing` | `ddw-stage` (set), `ddw-unstage` (clear) | Gitignored; per-machine; only these two scripts ever write |
+
+### The rule
+
+If you find yourself wanting to write a frontmatter field from a script not listed here, **stop**. Either: extend this table with a new authoritative writer, or refactor so the existing writer owns the change. Two writers on the same field is a coupling bug regardless of whether it shows up in testing.
