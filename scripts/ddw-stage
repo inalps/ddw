@@ -124,8 +124,10 @@ if ! git -C "$ROOT" rev-parse --verify "$BRANCH" &>/dev/null; then
 fi
 
 # --- Step 6: Merge ---
+# Force --no-ff so every staging produces exactly one merge commit. ddw-unstage's
+# `git reset --hard HEAD~1` then reverts cleanly regardless of task branch length.
 echo "Merging ${BRANCH} into integration worktree..."
-if ! git -C "$INTEGRATION_DIR" merge "$BRANCH" --no-edit 2>&1; then
+if ! git -C "$INTEGRATION_DIR" merge --no-ff "$BRANCH" --no-edit 2>&1; then
   # --- Step 7: Conflict — abort ---
   git -C "$INTEGRATION_DIR" merge --abort 2>/dev/null || true
   echo "Error: Merge conflict staging ${TASK_ID}. Resolve in source branch and re-stage." >&2

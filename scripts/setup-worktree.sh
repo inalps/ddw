@@ -145,32 +145,45 @@ if ! git -C "$ROOT" worktree add "$TARGET_DIR" -b "$BRANCH" "$BASE_BRANCH"; then
   exit 1
 fi
 
-# --- Step 10: Port offset ---
-slot=$((count + 1))
-port_offset=$((slot * 100))
-ENV_LOCAL="${TARGET_DIR}/.env.local"
-echo "PORT_OFFSET=${port_offset}" >> "$ENV_LOCAL"
-echo "Slot ${slot}, PORT_OFFSET=${port_offset}"
-
-# --- Step 11: Sync files (macOS/Linux only) ---
+# --- Step 10: Sync files (macOS/Linux only) ---
 # TODO: Windows symlink support deferred — MINGW/MSYS environments lack reliable symlink
 # permissions. A cp-based fallback should be added when Windows support is needed.
 OS="$(uname -s 2>/dev/null || echo "Unknown")"
 if [[ "$OS" == "Darwin" || "$OS" == "Linux" ]]; then
-  for entry in "${SYNC_FILES[@]}"; do
+  for entry in ${SYNC_FILES[@]+"${SYNC_FILES[@]}"}; do
     src="${ROOT}/${entry}"
     dst="${TARGET_DIR}/${entry}"
-    if [[ -e "$src" ]]; then
-      # Create parent dir if needed
-      dst_parent="$(dirname "$dst")"
-      mkdir -p "$dst_parent"
-      ln -s "$(realpath "$src")" "$dst"
-      echo "Symlinked: ${entry}"
+    [[ ! -e "$src" ]] && continue
+    src_real="$(realpath "$src")"
+    if [[ -L "$dst" ]]; then
+      existing_target="$(readlink "$dst")"
+      if [[ "$existing_target" == "$src_real" ]]; then
+        continue # idempotent: already correctly symlinked
+      fi
+      echo "Warning: ${entry} is symlinked to ${existing_target}, expected ${src_real}. Skipped."
+      continue
     fi
+    if [[ -e "$dst" ]]; then
+      echo "Warning: ${entry} already exists in worktree (tracked or local). Skipped."
+      continue
+    fi
+    dst_parent="$(dirname "$dst")"
+    mkdir -p "$dst_parent"
+    ln -s "$src_real" "$dst"
+    echo "Symlinked: ${entry}"
   done
 else
   echo "Warning: Symlink step skipped on ${OS} (Windows symlinks not supported). Copy .env files manually."
 fi
+
+# --- Step 11: Port offset ---
+# Write to .env.ddw (per-worktree, never in syncFiles). User's `commands.dev`
+# is expected to source this file before launching dev servers.
+slot=$((count + 1))
+port_offset=$((slot * 100))
+ENV_DDW="${TARGET_DIR}/.env.ddw"
+echo "PORT_OFFSET=${port_offset}" > "$ENV_DDW"
+echo "Slot ${slot}, PORT_OFFSET=${port_offset} (written to .env.ddw)"
 
 # --- Step 12: Run install if dependency dir missing ---
 if [[ -n "$INSTALL_CMD" ]]; then

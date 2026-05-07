@@ -139,7 +139,7 @@ Steps:
 1. Compute target dir from `ddw.json.worktree.taskDir` (default `.worktrees/{TASK_NAME}`).
 2. **Branch collision check:** if `task-a` already exists, exit 1 — never reuse a stranger's branch.
 3. `git worktree add <dir> -b task-a <base>` — base = `main` by default, or `task-x` if `--base` given (for dependency tasks).
-4. **Port offset:** count existing `.worktrees/TASK-*/` dirs (n), set `PORT_OFFSET=$((n * 100))` in the new worktree's `.env.local`. Project's `commands.dev` honors it. If `n+1 > worktree.maxConcurrent`, warn but don't block.
+4. **Port offset:** count existing `.worktrees/TASK-*/` dirs (n), set `PORT_OFFSET=$((n * 100))` in the new worktree's `.env.ddw` (a per-worktree DDW-owned file, never in `syncFiles`). Project's `commands.dev` is expected to source `.env.ddw` before launching servers. If `n+1 > worktree.maxConcurrent`, warn but don't block.
 5. **Sync files:** `ln -s` each entry in `worktree.syncFiles` from main repo into the new worktree. macOS/Linux only for now.
 6. Run `commands.install` if dependency dir missing.
 
