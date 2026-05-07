@@ -116,6 +116,10 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
        - If none remain: move the decision file to `{workflowDir}/decisions/archive/`
        - **Do NOT auto-move PRDs.** PRD closure is the owner's call via `/ddw:prd close` (§13 authority matrix). If the just-archived decision references a PRD that is not yet closed, REMIND the owner: "DEC-{id} archived. PRD-{id} is still active — run `/ddw:prd close PRD-{id}` if all relevant decisions exist."
     c. Logs are derived views — `ddw-index` regenerates them on demand. Skip inline sync.
+    d. **Queue tick** — after archival:
+       - If the closing task's status was `ready_for_integration` (queued but not yet staged) or `testing-complete` (came through staging): check `.ddw/integration.json`. If `testing` matches this task's ID, clear it by writing `{"testing": null}` to `.ddw/integration.json`. (This handles `/ddw:close` running on the currently-testing task.)
+       - Invoke `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root ${workflowRoot}`. The tick advances the queue: if the integration worktree is now idle and another task is ready, the next head will be staged.
+       - Print the result: "Queue advanced. Next staged: TASK-Y." or "Queue empty." (the ddw-queue tick output will indicate which).
 
 13.5. **Milestone phase completion** — check if archiving this decision completed a milestone:
    - Only run this step if a decision was archived in step 13b.

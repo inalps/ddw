@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# ddw-queue — manage the DDW integration queue
+# Usage: ddw-queue <subcommand> [--root <consumer-path>]
+#
+# Subcommands:
+#   tick   — advance the queue (stage head if integration idle)
+#   list   — print tasks with status=ready_for_integration, sorted by Ready-At asc
+#   status — print integration.json contents
+#
+# Chmod: chmod +x scripts/ddw-queue
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  echo "Usage: ddw-queue <subcommand> [--root <consumer-path>]"
+  echo ""
+  echo "Subcommands:"
+  echo "  tick    Advance the queue: stage head task if integration is idle"
+  echo "  list    Print ready_for_integration tasks sorted by Ready-At asc"
+  echo "  status  Print current integration.json state and queue"
+  exit 1
+}
+
+# --- Parse arguments ---
+SUBCOMMAND=""
+ROOT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    tick|list|status)
+      SUBCOMMAND="$1"
+      shift
+      ;;
+    --root)
+      shift
+      ROOT="${1:-}"
+      [[ -z "$ROOT" ]] && { echo "Error: --root requires a path argument" >&2; usage; }
+      shift
+      ;;
+    --help|-h)
+      usage
+      ;;
+    -*)
+      echo "Unknown flag: $1" >&2
+      usage
+      ;;
+    *)
+      echo "Unknown subcommand: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+[[ -z "$SUBCOMMAND" ]] && { echo "Error: subcommand required (tick, list, status)" >&2; usage; }
+
+# --- Resolve root ---
+if [[ -z "$ROOT" ]]; then
+  ROOT="$(pwd)"
+fi
+ROOT="$(cd "$ROOT" && pwd)"
+
+# Check ddw.json
+if [[ ! -f "${ROOT}/ddw.json" ]]; then
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+  exit 1
+fi
+
+node_helper="${SCRIPT_DIR}/_ddw_read_config.mjs"
+
+read_config() {
+  local key="$1"
+  local default_val="${2:-}"
+  local val
+  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  echo "$val"
+}
+
+WORKFLOW_DIR=$(read_config "workflowDir" "workflows")
+TASKS_PATH=$(read_config "paths.tasks" "tasks")
+DDW_DIR="${ROOT}/.ddw"
+INTEGRATION_JSON="${DDW_DIR}/integration.json"
+
+# Resolve task directory: try workflowDir/tasks/ first, then root/tasks/
+TASKS_DIR=""
+candidate1="${ROOT}/${WORKFLOW_DIR}/${TASKS_PATH}"
+candidate2="${ROOT}/${TASKS_PATH}"
+if [[ -d "$candidate1" ]]; then
+  TASKS_DIR="$candidate1"
+elif [[ -d "$candidate2" ]]; then
+  TASKS_DIR="$candidate2"
+fi
+
+# Read current testing value from integration.json
+get_testing() {
+  if [[ ! -f "$INTEGRATION_JSON" ]]; then
+    echo "null"
+    return
+  fi
+  node -e "
+    const fs = require('fs');
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      process.stdout.write(j.testing === null ? 'null' : String(j.testing));
+    } catch(e) {
+      process.stdout.write('null');
+    }
+  " "$INTEGRATION_JSON"
+}
+
+# Scan task files for ready_for_integration status
+# Returns lines: "<ready_at_iso>\t<task_id>\t<title>"
+# Sorted by ready_at ascending
+scan_ready_tasks() {
+  if [[ -z "$TASKS_DIR" || ! -d "$TASKS_DIR" ]]; then
+    return
+  fi
+
+  # Use node to parse task files (handles the bold-markdown frontmatter format)
+  node -e "
+    const fs = require('fs');
+    const path = require('path');
+    const tasksDir = process.argv[1];
+
+    const files = fs.readdirSync(tasksDir).filter(f =>
+      f.match(/^TASK-.*\.md$/) && !f.includes('/archive/')
+    );
+
+    const results = [];
+    for (const f of files) {
+      const filepath = path.join(tasksDir, f);
+      let content;
+      try { content = fs.readFileSync(filepath, 'utf8'); } catch(e) { continue; }
+
+      const statusMatch = content.match(/\*\*Status:\*\*\s*(\S+)/);
+      if (!statusMatch || statusMatch[1] !== 'ready_for_integration') continue;
+
+      const readyAtMatch = content.match(/\*\*Ready-At:\*\*\s*(\S+)/);
+      const readyAt = (readyAtMatch && readyAtMatch[1] !== 'none') ? readyAtMatch[1] : '0000-00-00T00:00:00Z';
+
+      // Extract task ID from filename (strip .md)
+      const taskId = f.replace(/\.md$/, '');
+
+      // Extract title from h1 or first heading line
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch ? titleMatch[1].trim() : taskId;
+
+      results.push({ readyAt, taskId, title });
+    }
+
+    results.sort((a, b) => a.readyAt.localeCompare(b.readyAt));
+
+    for (const r of results) {
+      process.stdout.write(r.readyAt + '\t' + r.taskId + '\t' + r.title + '\n');
+    }
+  " "$TASKS_DIR" 2>/dev/null || true
+}
+
+# --- Subcommand: tick ---
+if [[ "$SUBCOMMAND" == "tick" ]]; then
+  CURRENTLY_TESTING=$(get_testing)
+  if [[ "$CURRENTLY_TESTING" != "null" && "$CURRENTLY_TESTING" != "" ]]; then
+    # Integration busy — nothing to do
+    exit 0
+  fi
+
+  # Find head of queue
+  HEAD_LINE=$(scan_ready_tasks | head -n 1 || true)
+  if [[ -z "$HEAD_LINE" ]]; then
+    # Queue empty — nothing to do
+    exit 0
+  fi
+
+  HEAD_TASK_ID=$(echo "$HEAD_LINE" | cut -f2)
+  echo "Staging head of queue: ${HEAD_TASK_ID}"
+  exec "${SCRIPT_DIR}/ddw-stage" "$HEAD_TASK_ID" --root "$ROOT"
+fi
+
+# --- Subcommand: list ---
+if [[ "$SUBCOMMAND" == "list" ]]; then
+  ROWS=$(scan_ready_tasks)
+  if [[ -z "$ROWS" ]]; then
+    echo "(Queue empty — no tasks with status=ready_for_integration)"
+    exit 0
+  fi
+
+  while IFS=$'\t' read -r ready_at task_id title; do
+    printf "%-35s  %-26s  %s\n" "$task_id" "$ready_at" "$title"
+  done <<< "$ROWS"
+  exit 0
+fi
+
+# --- Subcommand: status ---
+if [[ "$SUBCOMMAND" == "status" ]]; then
+  # Delegate to ddw-integration-status for full output
+  exec "${SCRIPT_DIR}/ddw-integration-status" --root "$ROOT"
+fi

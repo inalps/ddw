@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# ddw-integration-reset — reset the integration worktree to origin/main
+# Usage: ddw-integration-reset [--root <consumer-path>] [--yes]
+#
+# Chmod: chmod +x scripts/ddw-integration-reset
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  echo "Usage: ddw-integration-reset [--root <consumer-path>] [--yes]"
+  echo ""
+  echo "  --root <path>  Consumer repo root (default: cwd)"
+  echo "  --yes          Skip confirmation prompt"
+  exit 1
+}
+
+# --- Parse arguments ---
+ROOT=""
+YES=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      shift
+      ROOT="${1:-}"
+      [[ -z "$ROOT" ]] && { echo "Error: --root requires a path argument" >&2; usage; }
+      shift
+      ;;
+    --yes|-y)
+      YES=true
+      shift
+      ;;
+    --help|-h)
+      usage
+      ;;
+    -*)
+      echo "Unknown flag: $1" >&2
+      usage
+      ;;
+    *)
+      echo "Unexpected argument: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+# --- Resolve root ---
+if [[ -z "$ROOT" ]]; then
+  ROOT="$(pwd)"
+fi
+ROOT="$(cd "$ROOT" && pwd)"
+
+# Check ddw.json
+if [[ ! -f "${ROOT}/ddw.json" ]]; then
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+  exit 1
+fi
+
+node_helper="${SCRIPT_DIR}/_ddw_read_config.mjs"
+
+read_config() {
+  local key="$1"
+  local default_val="${2:-}"
+  local val
+  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  echo "$val"
+}
+
+# --- Step 1: Read integrationDir ---
+INTEGRATION_DIR_REL=$(read_config "worktree.integrationDir" ".worktrees/integration")
+if [[ "$INTEGRATION_DIR_REL" != /* ]]; then
+  INTEGRATION_DIR="${ROOT}/${INTEGRATION_DIR_REL}"
+else
+  INTEGRATION_DIR="$INTEGRATION_DIR_REL"
+fi
+
+INSTALL_CMD=$(read_config "commands.install" "")
+DDW_DIR="${ROOT}/.ddw"
+INTEGRATION_JSON="${DDW_DIR}/integration.json"
+
+# --- Confirmation prompt ---
+if [[ "$YES" != "true" ]]; then
+  echo "Reset integration worktree (discards all merges)? (y/N)"
+  read -r answer
+  case "$answer" in
+    [yY][eE][sS]|[yY])
+      ;;
+    *)
+      echo "Aborted."
+      exit 0
+      ;;
+  esac
+fi
+
+# --- Step 2: cd to integration worktree ---
+if [[ ! -d "$INTEGRATION_DIR" ]]; then
+  echo "Error: Integration worktree not found at ${INTEGRATION_DIR}." >&2
+  exit 1
+fi
+
+# --- Step 3: git fetch origin main ---
+echo "Fetching origin/main..."
+if ! git -C "$INTEGRATION_DIR" fetch origin main 2>&1; then
+  echo "Warning: fetch from origin failed. Proceeding with local main branch."
+fi
+
+# --- Step 4: git reset --hard ---
+# Try origin/main first, fall back to local main
+if git -C "$INTEGRATION_DIR" rev-parse origin/main &>/dev/null; then
+  RESET_TARGET="origin/main"
+else
+  RESET_TARGET="main"
+fi
+
+echo "Resetting integration worktree to ${RESET_TARGET}..."
+git -C "$INTEGRATION_DIR" reset --hard "$RESET_TARGET"
+
+# --- Steps 5-6: Run install if configured ---
+if [[ -n "$INSTALL_CMD" ]]; then
+  echo "Running install: ${INSTALL_CMD}"
+  (cd "$INTEGRATION_DIR" && bash -c "$INSTALL_CMD")
+fi
+
+# --- Step 7: Update integration.json ---
+mkdir -p "$DDW_DIR"
+node -e "
+  const fs = require('fs');
+  fs.writeFileSync(process.argv[1], JSON.stringify({testing: null}, null, 2) + '\n');
+" "$INTEGRATION_JSON"
+
+# --- Print success ---
+echo "Integration reset to ${RESET_TARGET}. Queue cleared."

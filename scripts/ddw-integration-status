@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# ddw-integration-status — print integration worktree state and queue
+# Usage: ddw-integration-status [--root <consumer-path>]
+#
+# Chmod: chmod +x scripts/ddw-integration-status
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  echo "Usage: ddw-integration-status [--root <consumer-path>]"
+  echo ""
+  echo "  --root <path>  Consumer repo root (default: cwd)"
+  exit 1
+}
+
+# --- Parse arguments ---
+ROOT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      shift
+      ROOT="${1:-}"
+      [[ -z "$ROOT" ]] && { echo "Error: --root requires a path argument" >&2; usage; }
+      shift
+      ;;
+    --help|-h)
+      usage
+      ;;
+    -*)
+      echo "Unknown flag: $1" >&2
+      usage
+      ;;
+    *)
+      echo "Unexpected argument: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+# --- Resolve root ---
+if [[ -z "$ROOT" ]]; then
+  ROOT="$(pwd)"
+fi
+ROOT="$(cd "$ROOT" && pwd)"
+
+# Check ddw.json
+if [[ ! -f "${ROOT}/ddw.json" ]]; then
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+  exit 1
+fi
+
+node_helper="${SCRIPT_DIR}/_ddw_read_config.mjs"
+
+read_config() {
+  local key="$1"
+  local default_val="${2:-}"
+  local val
+  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  echo "$val"
+}
+
+INTEGRATION_DIR_REL=$(read_config "worktree.integrationDir" ".worktrees/integration")
+if [[ "$INTEGRATION_DIR_REL" != /* ]]; then
+  INTEGRATION_DIR="${ROOT}/${INTEGRATION_DIR_REL}"
+else
+  INTEGRATION_DIR="$INTEGRATION_DIR_REL"
+fi
+
+DDW_DIR="${ROOT}/.ddw"
+INTEGRATION_JSON="${DDW_DIR}/integration.json"
+
+# --- Step 1: Print testing status ---
+CURRENTLY_TESTING="(none)"
+if [[ -f "$INTEGRATION_JSON" ]]; then
+  val=$(node -e "
+    const fs = require('fs');
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      process.stdout.write(j.testing === null ? 'null' : String(j.testing));
+    } catch(e) {
+      process.stdout.write('null');
+    }
+  " "$INTEGRATION_JSON")
+  if [[ "$val" != "null" && "$val" != "" ]]; then
+    CURRENTLY_TESTING="$val"
+  fi
+fi
+
+if [[ "$CURRENTLY_TESTING" == "(none)" ]]; then
+  echo "Integration: idle"
+else
+  echo "Integration: testing ${CURRENTLY_TESTING}"
+fi
+
+# --- Step 2: Print queue ---
+echo ""
+QUEUE_OUTPUT=$("${SCRIPT_DIR}/ddw-queue" list --root "$ROOT" 2>&1 || true)
+QUEUE_COUNT=$(echo "$QUEUE_OUTPUT" | grep -c '^TASK-' || true)
+
+if [[ "$QUEUE_COUNT" -gt 0 ]]; then
+  echo "Queue: ${QUEUE_COUNT} task(s) ready"
+  while IFS= read -r line; do
+    echo "  ${line}"
+  done <<< "$QUEUE_OUTPUT"
+else
+  echo "Queue: empty"
+fi
+
+# --- Step 3: Print integration worktree recent commits ---
+echo ""
+echo "Recent integration commits:"
+if [[ -d "$INTEGRATION_DIR" ]]; then
+  git -C "$INTEGRATION_DIR" log --oneline -3 2>/dev/null | while IFS= read -r line; do
+    echo "  $line"
+  done || echo "  (no commits yet)"
+else
+  echo "  (integration worktree not found at ${INTEGRATION_DIR})"
+fi

@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# ddw-unstage — revert a staged task from the integration worktree
+# Usage: ddw-unstage <TASK-id> [--root <consumer-path>]
+#
+# Chmod: chmod +x scripts/ddw-unstage
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  echo "Usage: ddw-unstage <TASK-id> [--root <consumer-path>]"
+  echo ""
+  echo "  <TASK-id>     Task ID to unstage (e.g. TASK-20260507-foo)"
+  echo "  --root <path> Consumer repo root (default: cwd)"
+  exit 1
+}
+
+# --- Parse arguments ---
+TASK_ID=""
+ROOT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      shift
+      ROOT="${1:-}"
+      [[ -z "$ROOT" ]] && { echo "Error: --root requires a path argument" >&2; usage; }
+      shift
+      ;;
+    --help|-h)
+      usage
+      ;;
+    -*)
+      echo "Unknown flag: $1" >&2
+      usage
+      ;;
+    *)
+      if [[ -z "$TASK_ID" ]]; then
+        TASK_ID="$1"
+      else
+        echo "Unexpected argument: $1" >&2
+        usage
+      fi
+      shift
+      ;;
+  esac
+done
+
+[[ -z "$TASK_ID" ]] && { echo "Error: TASK-id is required" >&2; usage; }
+
+# --- Resolve root ---
+if [[ -z "$ROOT" ]]; then
+  ROOT="$(pwd)"
+fi
+ROOT="$(cd "$ROOT" && pwd)"
+
+# Check ddw.json
+if [[ ! -f "${ROOT}/ddw.json" ]]; then
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+  exit 1
+fi
+
+node_helper="${SCRIPT_DIR}/_ddw_read_config.mjs"
+
+read_config() {
+  local key="$1"
+  local default_val="${2:-}"
+  local val
+  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  echo "$val"
+}
+
+INTEGRATION_DIR_REL=$(read_config "worktree.integrationDir" ".worktrees/integration")
+if [[ "$INTEGRATION_DIR_REL" != /* ]]; then
+  INTEGRATION_DIR="${ROOT}/${INTEGRATION_DIR_REL}"
+else
+  INTEGRATION_DIR="$INTEGRATION_DIR_REL"
+fi
+
+TASKS_PATH=$(read_config "paths.tasks" "tasks")
+
+DDW_DIR="${ROOT}/.ddw"
+INTEGRATION_JSON="${DDW_DIR}/integration.json"
+
+# --- Step 1: Read integration.json; verify testing matches ---
+if [[ ! -f "$INTEGRATION_JSON" ]]; then
+  echo "Error: .ddw/integration.json not found. Nothing is currently staged." >&2
+  exit 1
+fi
+
+CURRENTLY_TESTING=$(node -e "
+  const fs = require('fs');
+  try {
+    const j = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    process.stdout.write(j.testing === null ? 'null' : String(j.testing));
+  } catch(e) {
+    process.stdout.write('null');
+  }
+" "$INTEGRATION_JSON")
+
+if [[ "$CURRENTLY_TESTING" != "$TASK_ID" ]]; then
+  if [[ "$CURRENTLY_TESTING" == "null" || "$CURRENTLY_TESTING" == "" ]]; then
+    echo "Error: ${TASK_ID} is not currently testing. Currently testing: (none)." >&2
+  else
+    echo "Error: ${TASK_ID} is not currently testing. Currently testing: ${CURRENTLY_TESTING}." >&2
+  fi
+  exit 1
+fi
+
+# --- Step 2: Revert in integration worktree ---
+if [[ ! -d "$INTEGRATION_DIR" ]]; then
+  echo "Error: Integration worktree not found at ${INTEGRATION_DIR}." >&2
+  exit 1
+fi
+
+echo "Reverting ${TASK_ID} from integration worktree..."
+git -C "$INTEGRATION_DIR" reset --hard HEAD~1
+
+# --- Step 3: Update task frontmatter status (ready_for_integration → in_progress) ---
+# Determine task file path relative to workflowDir or root
+WORKFLOW_DIR=$(read_config "workflowDir" "workflows")
+
+# Try workflowDir/tasks/ first, then paths.tasks directly from root
+TASK_FILE=""
+candidate1="${ROOT}/${WORKFLOW_DIR}/${TASKS_PATH}/${TASK_ID}.md"
+candidate2="${ROOT}/${TASKS_PATH}/${TASK_ID}.md"
+
+if [[ -f "$candidate1" ]]; then
+  TASK_FILE="$candidate1"
+elif [[ -f "$candidate2" ]]; then
+  TASK_FILE="$candidate2"
+fi
+
+if [[ -n "$TASK_FILE" ]]; then
+  # Replace **Status:** ready_for_integration with **Status:** in_progress
+  # Use sed with portable syntax (works on macOS and Linux)
+  if grep -q '\*\*Status:\*\* ready_for_integration' "$TASK_FILE" 2>/dev/null; then
+    sed -i.bak 's/\*\*Status:\*\* ready_for_integration/**Status:** in_progress/' "$TASK_FILE"
+    rm -f "${TASK_FILE}.bak"
+    echo "Task ${TASK_ID} status flipped: ready_for_integration → in_progress"
+  else
+    echo "Note: Task file found but status was not ready_for_integration (no flip needed)."
+  fi
+else
+  echo "Warning: Task file for ${TASK_ID} not found. Status flip skipped (idempotent)."
+fi
+
+# --- Step 4: Update integration.json ---
+node -e "
+  const fs = require('fs');
+  fs.writeFileSync(process.argv[1], JSON.stringify({testing: null}, null, 2) + '\n');
+" "$INTEGRATION_JSON"
+
+# --- Step 5: Print result ---
+echo "${TASK_ID} unstaged. Reverted in ${INTEGRATION_DIR}."
+
+# --- Step 6: Reminder (do NOT auto-cascade) ---
+echo "Run \`ddw-queue tick\` to stage next ready task."

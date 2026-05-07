@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "workflowDir": "workflows",
+  "specPath": null,
+  "autoUpdateSpec": false,
+  "testFilePattern": "*.test.ts",
+  "testCommand": null,
+  "userName": null,
+  "paths": {
+    "tasks": "tasks",
+    "decisions": "decisions",
+    "prds": "prds",
+    "logs": "logs"
+  },
+  "commands": {
+    "install": null,
+    "dev": null,
+    "typecheck": null,
+    "test": null,
+    "lint": null,
+    "migrate": null
+  },
+  "worktree": {
+    "taskDir": ".worktrees/{TASK_NAME}",
+    "integrationDir": ".worktrees/integration",
+    "syncFiles": [".env", ".env.local"],
+    "maxConcurrent": 3
+  }
+}

@@ -8,6 +8,7 @@ Copy this file and rename to `TASK-{yyyymmdd}-{title}.md` when creating a new ta
 **Decision:** DEC-{yyyymmdd}-{title}
 **Owner:** {userName}
 **Date:** {actual UTC datetime}
+**Ready-At:** none
 **Priority:** P1 | P2 | P3
 **Depends-On:** none
 
