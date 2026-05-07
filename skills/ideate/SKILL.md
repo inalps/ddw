@@ -83,6 +83,27 @@ Shape a rough idea into a structured PRD (Product Requirements Document) through
    - Show the complete draft PRD to the user for a final pass.
    - Ask: "Anything you want to change, add, or remove?"
 
+5.5. **Round 6 — Decision Backlog (decompose into ADR-sized DECs).** This step forces the PRD to spawn small, narrow decisions instead of one monolithic DEC.
+
+   - Tell the user: "Now we'll list the **architectural decisions** this PRD will need. Each should be narrow — one specific question, ADR-sized. Better to have 5 small DECs than 1 big one."
+   - Walk through the proposed solution and identify decision-points. Look for:
+     - Technology choices ("which queue?", "which DB?")
+     - Behavior contracts ("delivery semantics?", "retry policy?")
+     - Boundary questions ("client- or server-side?", "sync vs. async?")
+     - Schema/interface questions ("what does the public API look like?")
+     - Operational questions ("how do we deploy this?", "how do we observe failures?")
+   - For each, propose a slug + one-line question. Show the user:
+     ```
+     I see these decisions for this PRD:
+       1. push-semantics — at-least-once vs. exactly-once delivery?
+       2. queue-choice — SQS vs. Redis Streams vs. Kafka?
+       3. retry-policy — bounded vs. unbounded backoff?
+     Add any I missed, remove any that are too small to be a DEC, or merge duplicates.
+     ```
+   - Iterate until the owner confirms the list. Each entry must be **answerable with a single architect review** — if a slug feels like it needs multiple reviews, split it. If it feels like a configuration knob (not an architectural choice), drop it.
+   - Capture the confirmed list — these will populate the PRD's `## Decision Backlog` section in step 8.
+   - **Skip rule:** if the user says "skip" or "I don't know yet," accept it but warn: "We can ship the PRD with an empty backlog, but `/ddw:prd close` will refuse until you've at least listed the decisions or marked them deferred. Add them later via `/ddw:ideate` re-run."
+
 6. **Assess completeness** — Before writing the file, honestly assess:
    - Are all core sections filled with substance?
    - Are there contradictions between sections?
@@ -105,6 +126,12 @@ Shape a rough idea into a structured PRD (Product Requirements Document) through
 8. **Create the PRD file** at `{workflowDir}/prds/PRD-{yyyymmdd}-{slug}.md` where slug is the title lowercased with spaces replaced by hyphens. Use the template from `{workflowDir}/prds/PRD_TEMPLATE.md` (or the plugin's `templates/PRD_TEMPLATE.md` if not found in the project).
 
    Fill in all sections from the shaping session. Replace placeholder text with the synthesized content. For sections that were skipped, leave the template placeholder text as a reminder. Set the `Status:` field to the status confirmed by the owner in step 6.
+
+   **Populate `## Decision Backlog`** with the list confirmed in step 5.5. Each entry:
+   ```
+   - {slug} — {one-line decision question} (proposed)
+   ```
+   If the user skipped step 5.5, leave the template placeholder lines and add a Feedback Log entry: "Decision Backlog deferred during ideation — populate before `/ddw:prd close`."
 
    The `## Feedback Log` starts with:
    ```

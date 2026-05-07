@@ -955,8 +955,19 @@ Read-only consumers: `ddw-index`, all task skills, `/ddw:doctor`.
 |---|---|---|
 | `id`, `title`, `created_at` | `/ddw:ideate` (creation) | Never re-written |
 | `status: draft / solid / parked` | Owner via `/ddw:prd` helpers | Manual transitions |
-| `status: closed` | `/ddw:prd close` | Owner-invoked |
+| `status: closed` | `/ddw:prd close` | Owner-invoked; refuses if `## Decision Backlog` has `(proposed)` entries |
 | `decisions: [...]` | `/ddw:decision` | Append-on-DEC-creation |
+
+### PRD `## Decision Backlog` (body section, but treated as authoritative state)
+
+| Entry state | Writer | Notes |
+|---|---|---|
+| Initial population (entries with `(proposed)`) | `/ddw:ideate` step 5.5 + step 8 | One narrow decision per entry — ADR-sized |
+| `(proposed) → (decided → DEC-id)` | `/ddw:decision` action D | Auto-flip when matching DEC is created (From-PRD or standalone with append-fallback) |
+| `(proposed) → (deferred)` | `/ddw:prd defer <PRD-id> <slug>` | Owner-driven |
+| `(proposed) → (rejected)` | `/ddw:prd reject <PRD-id> <slug>` | Owner-driven |
+
+`/ddw:prd close` is the gatekeeper — refuses to close while any entry is still `(proposed)`. This forces every decision-question to reach a resolution (decided / deferred / rejected) before the PRD's job is considered done.
 
 Read-only consumers: `ddw-index`, `/ddw:doctor`. **`ddw-index` does not mutate PRD frontmatter** — pure reader.
 

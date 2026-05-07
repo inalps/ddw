@@ -16,12 +16,25 @@ Create a new decision file using the Decision-Driven Workflow.
 
 2. **Get today's UTC date** in `yyyymmdd` format for the file name prefix.
 
-3. **Ask the user** (via AskUserQuestion) for the following if not already provided in $ARGUMENTS:
+2.5. **Detect invocation mode from $ARGUMENTS.** Three modes are supported:
+   - **Standalone (default)**: $ARGUMENTS is empty or describes a fresh decision (free text). Proceed to step 3 normally — ask the user, browse PRDs, etc.
+   - **From-PRD**: $ARGUMENTS is a `PRD-{yyyymmdd}-{slug}` ID OR the literal `next`. Pull the next `(proposed)` entry from that PRD's `## Decision Backlog` section and use it to pre-fill title/slug/summary. Skip the AskUserQuestion in step 3 for those fields. The PRD context auto-fills step 3.2 (no picker prompt). If `next` is given, auto-pick the most-recently-edited `solid` PRD that has at least one `(proposed)` backlog entry.
+   - **From-PRD with explicit slug**: $ARGUMENTS is `<PRD-id> <slug>`. Same as From-PRD but operate on the named slug, not the next one (allows out-of-order resolution).
+
+   When in From-PRD mode:
+   - Read the PRD file. Locate the `## Decision Backlog` section.
+   - Find the target entry — `next` means "first `(proposed)` line top-down."
+   - If no `(proposed)` entries remain, tell the user: "PRD-X has no open backlog entries. Add one with `/ddw:ideate`-rerun, or close the PRD via `/ddw:prd close`." Stop.
+   - Extract the slug and the one-line question from the entry. The slug becomes the DEC filename suffix; the question becomes the `Summary` seed for the architect review.
+   - Skip the "Title / Summary" prompts in step 3.
+
+3. **Ask the user** (via AskUserQuestion) for the following if not already provided in $ARGUMENTS or by From-PRD mode:
    - **Title** (short, descriptive — becomes the filename slug, e.g. `push-semantics`)
    - **Summary** (what is being decided and why — can be a rough draft)
    - **Milestone** (which milestone this belongs to — optional at proposed stage; check `{workflowDir}/MILESTONES.md` for existing milestones)
 
 3.2. **Check for existing PRDs** —
+   - **If From-PRD mode**: the PRD is already chosen — skip the picker. Read the PRD file, store the PRD ID, and pass the PRD content to the architect review in step 3.6. Skip the rest of this step.
    - Scan `{workflowDir}/prds/PRD-*.md` (excluding `prds/archive/`) for PRD files.
    - If any PRDs exist, present them to the user with their status: "Found PRDs: {list with IDs, titles, and status}. Would you like to reference one for this decision?"
    - If the user selects a PRD:
@@ -91,7 +104,11 @@ Create a new decision file using the Decision-Driven Workflow.
    - **Action C — Update the PRD's `Decisions:` frontmatter array** — append the new DEC ID.
      - If currently `Decisions: []`, change to `Decisions: [DEC-{yyyymmdd}-{slug}]`.
      - If non-empty (e.g. `Decisions: [DEC-existing]`), append: `Decisions: [DEC-existing, DEC-{yyyymmdd}-{slug}]`.
-   - **Authority note:** `/ddw:decision` is the ONLY writer for the PRD's `Decisions:` array (per §13 frontmatter authority matrix). No other skill may modify this field.
+   - **Action D — Mark the matching `## Decision Backlog` entry as decided.**
+     - Find the line in the PRD's `## Decision Backlog` section whose slug matches this DEC's slug.
+     - If found: replace the trailing `(proposed)` with `(decided → DEC-{yyyymmdd}-{slug})`. Preserve the slug and question text.
+     - If not found (this DEC is being created standalone, not from the backlog): **append a new entry** to the `## Decision Backlog` section: `- {slug} — {one-line summary of what was decided} (decided → DEC-{yyyymmdd}-{slug})`. This keeps the PRD's backlog as a complete record even when DECs are created out-of-band.
+   - **Authority note:** `/ddw:decision` is the ONLY writer for the PRD's `Decisions:` array AND the ONLY writer for the `(decided → ...)` flip on a `## Decision Backlog` entry (per §13). No other skill may set these.
    - Do NOT modify any other section of the PRD. The PRD's core sections are the bible — read-only to all downstream processes.
 
 4. **Get the actual current UTC datetime** by running:
