@@ -81,33 +81,58 @@ For a quick overview, see [README.md](README.md).
                    Status: → done
                             │
                             ▼
+                    ┌──────────────┐
+                    │ INTEGRATION  │
+                    │              │
+                    └──────────────┘
+                     /ddw:sendit step 14 → ready_for_integration + Ready-At
+                     ddw-queue tick     → FIFO stage into integration WT
+                     ddw-stage          → git merge --no-ff
+                     manual smoke-test   in .worktrees/integration/
+                            │
+                            ▼
                     ┌──────────┐
                     │  CLOSE   │
                     │          │
                     └──────────┘
                      /ddw:close
-                     ─ update CURRENT_SPEC
+                     ─ update CURRENT_SPEC (opt-in)
                      ─ run drift detection
-                     ─ retrospective
-                     ─ archive task/decision
-                     ─ sync all logs
+                     ─ retrospective (auto-skipped on clean+short+single-session)
+                     ─ archive task / auto-close DEC if last task
+                     ─ clear integration.json + ddw-queue tick
+                     ─ ddw-index regenerates 4 log views
 ```
+
+**PRD lifecycle (parallel track):** `/ddw:ideate` creates a PRD → `/ddw:decision` references it and appends DEC IDs to the PRD's `Decisions:` array → owner runs `/ddw:prd close PRD-id` once all relevant DECs exist (sets `Status: closed`, moves to `prds/archive/`).
 
 ## Status State Machine
 
 ```
-  Decision:  proposed ──→ decided ──→ (archived when all tasks done)
-                  │
-                  └──→ cancelled
+  PRD:       draft ──→ solid ──→ closed ──→ (archived)
+               │           │
+               └──→ parked │
+                           └──→ /ddw:decision links a DEC
+                                /ddw:prd close marks closed
 
-  Task:      planned ──→ in_progress ──→ review_and_bugfix ──→ done ──→ (archived)
-                  │                                              │
-                  └──→ cancelled                                 └──→ /ddw:close
+  Decision:  proposed ──→ decided ──→ in_progress ──→ closed ──→ (archived)
+                  │           │            (auto-flips when      │
+                  │           │             first task created)  │
+                  │           └──→ cancelled / parked            │
+                  └──→ rejected                                  │
+                                                                 │
+                                              (auto-closes when last
+                                               linked task closes)
 
-  PRD:       draft ──→ solid ──→ (referenced by decisions)
-               │
-               └──→ parked
+  Task:      planned ──→ in_progress ──→ ready_for_integration ──→ closed ──→ (archived)
+                  │            │                  │
+                  │            │           queued by ddw-queue,
+                  │            │           merged by ddw-stage
+                  │            │
+                  └──→ abandoned (via /ddw:close --abandon)
 ```
+
+See [§13 of `enhancement.md`](enhancement.md#13-frontmatter-authority-matrix) for the full frontmatter authority matrix — every field has exactly one writer.
 
 ## Enforcement Layer
 
@@ -251,28 +276,123 @@ Runs automatically at `/ddw:close`. If DRIFTED, you decide: fix the spec or fix 
 
 ## Team Development
 
-DDW supports multiple developers working in parallel.
+DDW supports multiple developers working in parallel — and a single integration worktree as the merge point.
 
 ```
-  main branch ────────────────────────────────────────────>
+  main branch ──────────────────────────────────────────────────────>
        │                    │
        │ /ddw:decision      │ /ddw:task
        │ /ddw:task          │ (planning stays on main)
        │                    │
-       ├── task/feat-a ─────┤──── Dev A: /ddw:sendit → implement → qa → review → close → PR
-       │                    │
-       └── task/feat-b ─────┘──── Dev B: /ddw:sendit → implement → qa → review → close → PR
+       ├── task/feat-a ─────┤──── Dev A: /ddw:sendit → qa → review → ready_for_integration
+       │                    │                                              │
+       └── task/feat-b ─────┘──── Dev B: /ddw:sendit → qa → review → ready_for_integration
+                                                                           │
+                                                  ddw-queue tick (FIFO)    │
+                                                          ▼                │
+                                                 ┌───────────────────┐     │
+                                                 │  integration WT   │ ←───┘
+                                                 │  (merged via       │
+                                                 │   ddw-stage        │
+                                                 │   --no-ff)         │
+                                                 └───────────────────┘
+                                                          │
+                                                  manual smoke-test
+                                                          │
+                                                  /ddw:close → PR
 ```
 
 - **Identity**: `git config user.name` at runtime — no per-user config
 - **Planning on main**: Decisions and tasks on `main` so everyone sees them
-- **Implementation on branches**: `/ddw:sendit` creates `task/{id}` branch automatically
+- **Implementation in worktrees**: `setup-worktree.sh TASK-id` creates `.worktrees/TASK-id/` on a fresh `task/TASK-id` branch
+- **Integration is serial**: only one task tests at a time (hard-gated by `.ddw/integration.json.testing`)
 - **Owner-aware hooks**: `require-active-task` checks *your* user — parallel work is fine
 - **Close on branch**: Then merge via PR
 
-### Self-Healing Logs
+## Integration Loop
 
-5 log files (`TASK_LOG`, `DECISION_LOG`, `PRD_LOG`, `CHANGE_LOG`, `RETRO_LOG`) are rebuilt from source files before every skill run. Rows are never deleted. Both active and `archive/` directories are scanned.
+Phase A's integration scripts move a finished task from "ready" → "merged into integration" → "closed".
+
+### Setup (one-time)
+
+```bash
+# Create the integration worktree from main:
+git worktree add .worktrees/integration -b integration main
+```
+
+Configure `ddw.json`:
+
+```json
+{
+  "worktree": {
+    "taskDir": ".worktrees/{TASK_NAME}",
+    "integrationDir": ".worktrees/integration",
+    "syncFiles": [".env"],
+    "maxConcurrent": 3
+  },
+  "commands": {
+    "install": "pnpm install",
+    "dev": "pnpm dev",
+    "migrate": null
+  }
+}
+```
+
+`syncFiles` are symlinked from the main repo into each new worktree (existing files are left alone). `commands.install` runs automatically when a worktree is missing `node_modules` / `.venv` / `vendor`. `commands.migrate` runs automatically when `ddw-stage` detects a migration file in the merged diff (configure `worktree.migrationGlob`).
+
+### Per-task flow
+
+```bash
+# 1. Spin up a worktree for the task
+bash ${CLAUDE_PLUGIN_DIR}/scripts/setup-worktree.sh TASK-20260507-feature-a
+
+# 2. Work in .worktrees/TASK-20260507-feature-a/, run /ddw:sendit, /ddw:review
+#    (ports auto-offset via .env.ddw — source it from your dev command)
+
+# 3. /ddw:sendit step 14 sets the task to ready_for_integration + Ready-At,
+#    and calls ddw-queue tick. If integration is idle, the task is auto-merged.
+
+# 4. Manual smoke-test in .worktrees/integration/
+
+# 5. /ddw:close on the task — clears integration.json, ticks the queue
+```
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `setup-worktree.sh TASK-id [--base TASK-id]` | Create `.worktrees/TASK-id` on `task/TASK-id`. `--base` lets a task branch off another task instead of `main` (dependency chaining). Skips already-existing branches and tracked sync-target files. |
+| `ddw-stage TASK-id` | `git merge --no-ff task/TASK-id` into the integration worktree. Refuses if integration is dirty or another task is testing. Records `{"testing": TASK-id}` in `.ddw/integration.json`. |
+| `ddw-unstage TASK-id` | `git reset --hard HEAD~1` on integration. Flips task `ready_for_integration → in_progress`. Clears `integration.json`. |
+| `ddw-queue tick` | If integration is idle, stage the FIFO head (sorted by `Ready-At` asc). |
+| `ddw-queue list` | Print all `ready_for_integration` tasks sorted by `Ready-At`. |
+| `ddw-queue status` (or `ddw-integration-status`) | Print currently-testing task + queue + last 5 integration commits. |
+| `ddw-integration-reset [--yes]` | Reset integration worktree to `origin/main` (falls back to local `main`). Re-runs `commands.install`. Clears `integration.json`. Prompts for confirmation unless `--yes`. |
+
+### `.env.ddw` and port offsets
+
+`setup-worktree.sh` writes `PORT_OFFSET=<slot * 100>` to `.env.ddw` in the new worktree (slot = count of existing task worktrees + 1). `.env.ddw` is **never** in `syncFiles` — it's per-worktree by design. Source it from your `commands.dev`:
+
+```bash
+# pnpm dev wrapper, for example:
+set -a; source .env.ddw 2>/dev/null; set +a; pnpm dev
+```
+
+### Derived Logs (via `ddw-index`)
+
+4 log files — `TASK_LOG.md`, `DECISION_LOG.md`, `PRD_LOG.md`, `RETRO_LOG.md` — are **derived views**, regenerated from task/DEC/PRD source files by:
+
+```bash
+node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs --root .
+```
+
+Source files in `tasks/`, `decisions/`, `prds/` (including `archive/`) are the canonical truth. The script never mutates them. Modes:
+
+- **Default**: regenerate all 4 logs.
+- `--check`: exit 1 if any log is out of date (use as a pre-commit hook).
+- `--dry-run`: print row-level diff without writing.
+
+Run it after closing a task, or wire it into `pre-commit` so logs never drift.
 
 ### Archive
 
@@ -284,10 +404,11 @@ Completed tasks → `tasks/archive/`. Completed decisions → `decisions/archive
 ddw/
 ├── .claude-plugin/
 │   └── plugin.json                Plugin manifest
-├── skills/                        11 skills (Claude Code slash commands)
+├── skills/                        12 skills (Claude Code slash commands)
 │   ├── init/SKILL.md              Bootstrap DDW into a project
 │   ├── ideate/SKILL.md            Shape ideas → PRD (Shaper agent)
 │   ├── decision/SKILL.md          Create decisions (Architect agent)
+│   ├── prd/SKILL.md               PRD lifecycle helpers (close)
 │   ├── task/SKILL.md              Create tasks with acceptance criteria
 │   ├── sendit/SKILL.md            Start implementation (Developer agent)
 │   ├── qa/SKILL.md                Automated QA (QA agent)
@@ -296,9 +417,18 @@ ddw/
 │   ├── drift/SKILL.md             Spec-code consistency check
 │   ├── architect/SKILL.md         Design review / bootstrap
 │   └── upgrade/SKILL.md           Upgrade project scaffolding
+├── scripts/                       Worktree + integration runtime
+│   ├── ddw-index.mjs              Regenerate log views from source files
+│   ├── setup-worktree.sh          Create per-task git worktree
+│   ├── ddw-stage                  Merge a task branch into integration
+│   ├── ddw-unstage                Revert the staged task (HEAD~1)
+│   ├── ddw-queue                  tick / list / status — FIFO by Ready-At
+│   ├── ddw-integration-status     Print testing + queue + recent commits
+│   ├── ddw-integration-reset      Reset integration worktree to origin/main
+│   └── _ddw_read_config.mjs       Internal config-reader helper
 ├── hooks/
 │   ├── hooks.json                 Hook wiring (4 event types)
-│   └── scripts/                   9 enforcement scripts
+│   └── scripts/                   Enforcement scripts (validate-datetime, etc.)
 ├── agents/                        4 agent profiles (role mindsets)
 │   ├── shaper.md                  Thinking partner for ideation
 │   ├── architect.md               System designer
@@ -312,16 +442,17 @@ ddw/
     ├── INVARIANTS.md
     ├── WORKFLOW.md
     ├── MILESTONES.md
-    └── VOICE.md
+    ├── VOICE.md
+    └── ddw.json.example
 ```
 
 ## What `/ddw:init` Creates
 
 ```
 {workflowDir}/
-├── ddw.json               Config (project name, paths, test command)
+├── ddw.json               Config (paths, commands.{install,dev,typecheck,test,lint,migrate}, worktree)
 ├── prds/                  Product requirement documents
-│   └── archive/
+│   └── archive/           Closed PRDs (moved here by /ddw:prd close)
 ├── decisions/             Decision files (architect review + task list)
 │   └── archive/
 ├── tasks/                 Task files (scoped work with acceptance criteria)
@@ -329,17 +460,19 @@ ddw/
 ├── guardrails/
 │   ├── GUARDRAILS.md      Architecture rules (fill this in)
 │   └── INVARIANTS.md      Machine-testable rules (grows over time)
-├── logs/
+├── logs/                  Derived views — regenerated by ddw-index, never hand-edited
 │   ├── TASK_LOG.md        Status table for all tasks
 │   ├── DECISION_LOG.md    Index of all decisions
 │   ├── PRD_LOG.md         Index of all PRDs
-│   ├── CHANGE_LOG.md      What shipped and when
 │   └── RETRO_LOG.md       Retrospective entries per task
 ├── hooks/                 Hook scripts (copied from plugin)
 ├── agents/                Role profiles (copied from plugin)
 ├── MILESTONES.md          Planning priority order
 ├── WORKFLOW.md            Full workflow reference
 └── VOICE.md               Communication style
+
+.ddw/                      Per-machine runtime state (gitignored)
+└── integration.json       { "testing": "TASK-..." | null }
 ```
 
 ## Session Handoff

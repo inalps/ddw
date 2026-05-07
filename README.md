@@ -31,12 +31,20 @@ It's a **development harness that enforces quality at the system level.**
 
 ## The Flow
 
-Decision → Task → Implement → QA → Close
+Decision → Task → Implement → QA → Integrate → Close
 
 Or full power:
 
 ```
-/ddw:ideate → /ddw:decision → /ddw:task → /ddw:sendit → /ddw:review → /ddw:close
+/ddw:ideate → /ddw:decision → /ddw:task → /ddw:sendit → /ddw:review
+                                              ↓
+                                  ready_for_integration
+                                              ↓
+                                  ddw-queue tick → ddw-stage
+                                              ↓
+                                          /ddw:close
+                                              ↓
+                                       /ddw:prd close
 ```
 
 ---
@@ -96,14 +104,26 @@ Then run `/ddw:init`.
 | `/ddw:init` | Bootstrap DDW into a project |
 | `/ddw:ideate` | Shape rough ideas into a PRD |
 | `/ddw:decision` | Create decision with architect review |
+| `/ddw:prd close PRD-id` | Close a PRD once its decisions exist |
 | `/ddw:task` | Break decision into scoped tasks |
-| `/ddw:sendit` | Start implementation on feature branch |
+| `/ddw:sendit` | Start implementation; on review-pass, queues the task for integration |
 | `/ddw:qa` | Automated QA: acceptance criteria + invariants |
 | `/ddw:review` | QA + tests + owner checklist |
-| `/ddw:close` | Spec update, drift check, retro, archive |
+| `/ddw:close` | Spec update, drift check, retro, archive, advance the integration queue |
 | `/ddw:drift` | Check spec-code consistency |
 | `/ddw:architect` | Design review or bootstrap constraints |
 | `/ddw:upgrade` | Upgrade project to latest plugin version |
+
+### Integration scripts (run from the consumer repo root)
+
+| Script | Purpose |
+|---|---|
+| `bash $CLAUDE_PLUGIN_DIR/scripts/setup-worktree.sh TASK-id` | Spin up a per-task git worktree |
+| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-queue tick \| list \| status` | Manage the integration FIFO |
+| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-stage TASK-id` | Merge a ready task into the integration worktree |
+| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-unstage TASK-id` | Revert it cleanly |
+| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-integration-reset --yes` | Reset integration worktree to origin/main |
+| `node $CLAUDE_PLUGIN_DIR/scripts/ddw-index.mjs --root .` | Regenerate the 4 log views |
 
 ---
 
@@ -112,8 +132,8 @@ Then run `/ddw:init`.
 - **Run `/clear` after each task**
   Context builds up and slows things down. Fresh start = fast start.
 
-- **Working on multiple tasks? Use `git worktree`**
-  Or just tell the AI "work on these in parallel" — it'll figure it out.
+- **Working on multiple tasks? Use the built-in worktree helper**
+  `bash $CLAUDE_PLUGIN_DIR/scripts/setup-worktree.sh TASK-id` spins up an isolated worktree with auto port-offset (`.env.ddw`), symlinked secrets, and a fresh `task/TASK-id` branch. `maxConcurrent` in `ddw.json` caps how many you can run.
 
 - **Don't overthink Git early on**
   Manual is fine. When it gets tedious, let the AI handle it.
