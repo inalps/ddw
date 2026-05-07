@@ -1,1 +1,6 @@
 .claude/
+
+# Smoke-test artifacts produced when running ddw-index against the plugin repo itself.
+# The plugin doesn't ship a top-level logs/ — that's a consumer-side artifact.
+# (templates/logs/ is shipped and tracked.)
+/logs/

@@ -19,9 +19,11 @@ What must be implemented.
 ## Scope
 What is included in this task.
 
+<!-- OPTIONAL: Non-Goals | shown when: scope is M or L -->
 ## Non-Goals
 What must NOT be implemented in this task.
 
+<!-- OPTIONAL: Constraints | shown when: scope is M or L -->
 ## Constraints
 Relevant rules from guardrails or project conventions.
 
@@ -47,6 +49,7 @@ Expected files or systems affected.
 | AC-02 | {what must be true} | code-review | {function + property} |
 | AC-03 | {what must be true} | manual | {human instruction} |
 
+<!-- OPTIONAL: Context Packing | shown when: multi-session expected -->
 ## Context Packing
 // Fill before writing any implementation code.
 // - What I know: brief summary of relevant current state
@@ -54,6 +57,7 @@ Expected files or systems affected.
 // - Risk areas: what could break, which rules are at risk
 // - Interpretation: any assumption made — state it for Owner to confirm
 
+<!-- OPTIONAL: Session Handoff | shown when: multi-session expected -->
 ## Session Handoff
 <!-- Auto-populated by hook on session end. Parsed by /ddw:sendit on resume. -->
 <!-- Clear this section when resuming (sendit step 4 does this automatically). -->
@@ -89,7 +93,7 @@ Expected files or systems affected.
 // **Key decision:** ...
 
 ## Changes
-<!-- Fill during /ddw:close. Used to rebuild CHANGE_LOG.md. -->
+<!-- Fill during /ddw:close. Records what changed; ddw-index derives aggregate views later. -->
 <!-- **Summary:** 2-4 sentences: what changed, files affected, test count if applicable -->
 
 ## Owner Review Checklist

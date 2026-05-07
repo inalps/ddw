@@ -14,12 +14,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `specPath`, `autoUpdateSpec`, and `testCommand`. Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync essential logs** — Sync only the logs needed upfront. Scan **both** active directories and `archive/` subdirectories. **Never delete existing rows** — only add missing entries and update existing entries. Logs are a permanent record.
-   - `TASK_LOG.md` — from `TASK-*.md` files in `tasks/` and `tasks/archive/`: extract Owner, Status, Date, last Work Log timestamp. Add missing rows, update status of existing rows.
-   - `DECISION_LOG.md` — from `DEC-*.md` files in `decisions/` and `decisions/archive/`: extract ID, Title, Owner, Status, Date. Add missing rows, update status of existing rows.
-   - Defer `CHANGE_LOG.md` sync to step 7 (when Changes section is filled).
-   - Defer `RETRO_LOG.md` sync to step 12 (when retrospective is recorded).
-   - Defer `PRD_LOG.md` sync to step 13c (during archive and final sync).
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh. Skill steps below reference data from source files, never from `logs/`.
 
 2. **Read the task file** at `{workflowDir}/tasks/TASK-{date}-{title}.md` to understand what was implemented.
 
@@ -41,22 +36,28 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
      Status → done. Owner verification passed.
      ```
 
-6. **TASK_LOG.md** — skip direct update. The log sync (step 1.5) will add or update the row on the next skill invocation.
+6. **TASK_LOG.md** — skip direct update. `ddw-index` derives the log from task source files.
 
 7. **Task file — Changes section** — fill the `## Changes` section in the task file:
    ```
    **Summary:** {2-4 sentences: what changed, what files/systems affected, test count if applicable}
    ```
-   Then re-sync `CHANGE_LOG.md` from all done task files so it reflects this task immediately. Order entries by datetime, newest first.
 
-8. **CURRENT_SPEC (mandatory, tiered)** — spec review is required on every task close:
+8. **CURRENT_SPEC (opt-in, tiered)** — spec review is opt-in; skip silently unless at least one of these conditions is true:
+   - The task file's frontmatter declares `**Spec-affecting:** yes`
+   - `ddw.json.autoUpdateSpec` is `true`
+   - The task's `## Changes` section explicitly mentions spec sections
+
+   For purely internal tasks (refactor, tests, tooling, bug fix without visible-behavior change) where none of the above conditions are true: skip silently and append to Work Log: "Spec review: skipped (no spec-affecting changes declared)."
+
+   When ANY condition is true, run the tiered logic:
    - If `specPath` is null or the spec file doesn't exist, skip and warn: "No spec configured. Consider running `/ddw:init` to set one up."
    - Read the spec's headings/section structure first.
    - Read the task's `## Changes` section (from step 7) to identify what behavior changed.
    - Read only the spec sections affected by those changes — skip unrelated domain areas.
-   - **If the task changed spec-visible behavior** — update the relevant sections of the spec to reflect the new reality. Use the structure from the plugin's `templates/CURRENT_SPEC_TEMPLATE.md` as reference for section format. For each section updated, set or replace the `> Shaped by:` reference line with the current task and decision IDs (e.g., `> Shaped by: TASK-20260406-auth-flow | DEC-20260401-auth-redesign`). Show the user what changed.
-   - **If the task is purely internal** (refactoring, tests, tooling — no behavior change) — the owner must explicitly confirm: "This task doesn't affect the spec. Skip spec update?" Log the skip reason in the task's `## Changes` section: `Spec update: skipped — {reason}`.
-   - This step runs regardless of the `autoUpdateSpec` config value. The config controls whether the update happens silently (true) or with confirmation (false), but the review always happens.
+   - Update the relevant sections of the spec to reflect the new reality. Use `templates/CURRENT_SPEC_TEMPLATE.md` as reference for section format. For each section updated, set or replace the `> Shaped by:` reference line with the current task and decision IDs (e.g., `> Shaped by: TASK-20260406-auth-flow | DEC-20260401-auth-redesign`).
+   - When `autoUpdateSpec` is `true`, apply updates silently and report what changed afterward. When `false`, show the proposed updates and require confirmation before applying.
+   - The "purely internal — owner must confirm" branch from the previous mandatory flow is removed: by entering this block at all, the task has already opted into spec review via one of the three conditions above.
 
 9. **Drift check** — run `/ddw:drift` logic. If the status is **DRIFTED** after the spec update, warn the user and list remaining contradictions. The user decides whether to fix now or defer.
 
@@ -64,9 +65,21 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
 11. **DECISION_LOG + decision files** — if the task has a linked decision:
     - Update the decision file status to `decided` (if not already).
-    - Skip direct DECISION_LOG row update — the log sync will update the row on the next invocation.
+    - Skip direct DECISION_LOG row update — `ddw-index` derives the log from DEC source files.
 
-12. **Retrospective** — ask the user:
+12. **Retrospective** — check skip conditions first. Skip the prompt entirely when ALL three are true:
+    - **Clean QA:** No `## Review Log` entries with `status: confirmed`. (Pending or not-a-bug entries don't count.)
+    - **Short task:** Duration from first "Status → in_progress" Work Log entry to the current "Status → done" entry is < 2 hours.
+    - **Single session:** Only one "Status → in_progress" entry in Work Log (no resume entries).
+
+    When ALL three conditions are true: silently fill the `## Retrospective` section with:
+       ```
+       **Feedback:** Clean run. No issues. (auto-skipped — clean QA, <2hr, single session)
+       **Action:** None.
+       ```
+    Then proceed to step 12.5.
+
+    When ANY condition fails: ask the user:
     "Anything surprising, difficult, or wrong in this task?"
 
     If the user provides feedback:
@@ -78,13 +91,14 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     b. If the feedback implies a new invariant → propose it (owner approves)
     c. If the feedback implies a guardrail change → update GUARDRAILS.md
     d. If the feedback implies a workflow improvement → note it for WORKFLOW.md
-    e. Re-sync `RETRO_LOG.md` from all done task files. Order entries by datetime, newest first.
 
     If the user says "nothing" or skips → fill the section:
        ```
        **Feedback:** Clean run. No issues.
        **Action:** None.
        ```
+
+    After filling the section (whether auto-skipped or prompted): the retrospective body in the task file is the source of truth. `ddw-index` derives `RETRO_LOG.md` — no inline sync needed.
 
 12.5. **Verify proposed constraints** — check that constraints from the linked decision weren't lost:
    - Read the task's `**Decision:**` field. If it references a decision, read that decision file.
@@ -100,8 +114,8 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     b. Check if the linked decision has any remaining non-archived tasks:
        - Scan `{workflowDir}/tasks/TASK-*.md` (non-archive) for files where `**Decision:**` matches this task's decision
        - If none remain: move the decision file to `{workflowDir}/decisions/archive/`
-       - If the decision references a PRD (`PRD:` field is not "none"), move that PRD to `{workflowDir}/prds/archive/`
-    c. Re-sync all five logs — archived files are included in sync, so their rows remain with final status.
+       - **Do NOT auto-move PRDs.** PRD closure is the owner's call via `/ddw:prd close` (§13 authority matrix). If the just-archived decision references a PRD that is not yet closed, REMIND the owner: "DEC-{id} archived. PRD-{id} is still active — run `/ddw:prd close PRD-{id}` if all relevant decisions exist."
+    c. Logs are derived views — `ddw-index` regenerates them on demand. Skip inline sync.
 
 13.5. **Milestone phase completion** — check if archiving this decision completed a milestone:
    - Only run this step if a decision was archived in step 13b.
@@ -127,3 +141,5 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     - [ ] Proposed constraints (all resolved / N/A)
     - [ ] Archived (task / task + decision)
     - [ ] Logs synced
+
+**Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

@@ -12,7 +12,7 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` (default: `workflows`). Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync TASK_LOG** — Sync `{workflowDir}/logs/TASK_LOG.md` from all `TASK-*.md` files in both `{workflowDir}/tasks/` and `tasks/archive/`. Extract Owner, Status, Date, last Work Log timestamp. Add missing rows and update existing rows. **Never delete rows** — logs are a permanent record.
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh. Skill steps below reference data from source files, never from `logs/`.
 
 2. **Find the task:**
    - If $ARGUMENTS names a task, use that.
@@ -125,4 +125,14 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
    4. If no changes are needed, skip silently. Only log to the Work Log when files are created or updated: `Refreshed .gitignore` / `Created .dockerignore` / etc.
 
+12.6. **Companion-test gate** — after step 12's tests are written and pass (or after determining no tests are applicable), enforce this gate before auto-review:
+   1. Read `ddw.json.testFilePattern`. If absent, fall back to common patterns: `*.test.ts`, `*.test.js`, `*_test.py`, `*_test.go`, `*_test.rs`.
+   2. Glob for test files matching the pattern in directories that contain files modified during this task. Use the task's `## Files` section and `## Tests` section as the source of modified directories.
+   3. If ≥1 test file exists matching the pattern → proceed to step 13.
+   4. If 0 test files match → check the task file for a `**No-Test-Justification:**` field:
+      - Present and non-empty → append to Work Log: "Sendit gate: no test, justified — {reason}" and proceed to step 13.
+      - Absent or empty → **BLOCK** with: "No companion test detected matching `{testFilePattern}`. Either (a) add a test, or (b) add `**No-Test-Justification:** <reason>` to the task file frontmatter, then re-run /ddw:sendit."
+
 13. **Auto-review** — when implementation and tests are complete, immediately run `/ddw:review` logic against this task. Do not wait for the user to trigger it. The owner should receive a fully reviewed task, not a half-finished handoff.
+
+**Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

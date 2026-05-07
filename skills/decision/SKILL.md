@@ -12,7 +12,7 @@ Create a new decision file using the Decision-Driven Workflow.
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` (default: `workflows`). Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync DECISION_LOG** — Sync `{workflowDir}/logs/DECISION_LOG.md` by scanning all `DEC-*.md` files in both `{workflowDir}/decisions/` and `decisions/archive/`. Extract ID, Title, Owner, Status, Date from each file. Add missing rows and update existing rows. **Never delete rows** — logs are a permanent record. This ensures the log reflects the latest state after any merges.
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh. Skill steps below reference data from source files, never from `logs/`.
 
 2. **Get today's UTC date** in `yyyymmdd` format for the file name prefix.
 
@@ -78,12 +78,20 @@ Create a new decision file using the Decision-Driven Workflow.
    - What the final agreement is
    This summary will be included in the DEC file's `## Discussion` section.
 
-3.9. **Append to PRD Feedback Log** (only if a PRD was referenced in step 3.2):
+3.9. **Append to PRD Feedback Log and update Decisions array** (only if a PRD was referenced in step 3.2):
    - Get the actual current UTC datetime.
-   - Append an entry to the PRD's `## Feedback Log` section:
+   - **Action A — Append architect-verdict entry** to the PRD's `## Feedback Log` section:
      ```
      - {actual UTC datetime} — [decision:DEC-{yyyymmdd}-{slug}] Architect review verdict: {verdict}. Key findings: {1-2 sentence summary of constraints, risks, or design notes surfaced during review}.
      ```
+   - **Action B — Append decision-created entry** to the PRD's `## Feedback Log` section (immediately after the architect-verdict entry above):
+     ```
+     - {actual UTC datetime} — [decision-created:DEC-{yyyymmdd}-{slug}] Decision created from this PRD. Owner: close this PRD via `/ddw:prd close` once all relevant decisions exist.
+     ```
+   - **Action C — Update the PRD's `Decisions:` frontmatter array** — append the new DEC ID.
+     - If currently `Decisions: []`, change to `Decisions: [DEC-{yyyymmdd}-{slug}]`.
+     - If non-empty (e.g. `Decisions: [DEC-existing]`), append: `Decisions: [DEC-existing, DEC-{yyyymmdd}-{slug}]`.
+   - **Authority note:** `/ddw:decision` is the ONLY writer for the PRD's `Decisions:` array (per §13 frontmatter authority matrix). No other skill may modify this field.
    - Do NOT modify any other section of the PRD. The PRD's core sections are the bible — read-only to all downstream processes.
 
 4. **Get the actual current UTC datetime** by running:
@@ -127,10 +135,7 @@ Create a new decision file using the Decision-Driven Workflow.
    {Or if single task: "- (single task — to be created)"}
    ```
 
-6. **Add a row** to the index table in `{workflowDir}/logs/DECISION_LOG.md`:
-   ```
-   | DEC-{yyyymmdd}-{slug} | {Title} | proposed | {actual UTC datetime} |
-   ```
+6. **DECISION_LOG.md is a derived view** (`ddw-index` regenerates from DEC files). The new DEC file IS the source of truth — no manual log row needed.
 
 7. **If a milestone was provided**, add the decision ID to the appropriate section in `{workflowDir}/MILESTONES.md`. If the milestone section doesn't exist yet, create it.
 
@@ -179,3 +184,5 @@ Create a new decision file using the Decision-Driven Workflow.
    - This creates a clear audit trail of which constraints were accepted and which were not.
 
 10. **Report**: the decision file path, decision ID, and current status.
+
+**Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

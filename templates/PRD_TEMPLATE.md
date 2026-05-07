@@ -3,6 +3,7 @@
 Status: draft
 Date: {actual UTC datetime}
 Owner: {userName}
+Decisions: []
 
 ## Problem Statement
 What problem are we solving? Why does it matter? What happens if we don't solve it?
