@@ -146,17 +146,39 @@ Create a new decision file using the Decision-Driven Workflow.
 
 8. **Remind the user**: The architect review is complete and embedded in the decision file. A TASK may only be created once the Owner changes status to `decided`. Milestone assignment is required before `decided`.
 
-9. **Multi-phase gate** (when the Owner later confirms `decided` and you update the status):
-   - Ask: "How many tasks will this decision need? If more than one, list all planned tasks now."
-   - If the answer is > 1: Update the `## Tasks` section with all planned task entries using the format:
-     ```
-     - {slug} — {description} (not yet created)
-     - {slug} — {description} (depends: {dep-slug}) (not yet created)
-     ```
-     Include `(depends: {slug-a}, {slug-b})` when a task requires other tasks to be completed first. Derive ordering from the Architect Review's Task Breakdown. Tasks with no dependencies omit the annotation.
-   - If the answer is 1 or unclear: Leave `## Tasks` as-is (the single task will be added by `/ddw:task`).
-   - **After updating status to `decided`:** the `create-decided-tasks` hook will fire and list all uncreated tasks. Invoke `/ddw:task` for **each** listed task immediately, passing the decision ID, slug, and details from the Architect Review's Task Breakdown (goal, scope, non-goals, priority). Do not stop after creating only one task.
-   - **Why:** The `create-decided-tasks` hook ensures all planned tasks are created together when a decision becomes `decided`. The `require-all-tasks` hook blocks `in_progress` on any task until ALL tasks listed in the decision's `## Tasks` section exist in TASK_LOG. The `check-deps-done` hook additionally blocks `in_progress` on any task whose `Depends-On` tasks aren't `done` yet. This prevents phases from being forgotten or started out of order across sessions.
+9. **Atomic task creation** (when the Owner confirms `decided`):
+
+   9a. **Populate `## Tasks` from the Architect Review's Task Breakdown.** Each entry uses this format:
+   ```
+   - {slug} — {description} (not yet created)
+   - {slug} — {description} (depends: {dep-slug}) (not yet created)
+   ```
+   Include `(depends: {slug-a}, {slug-b})` when a task requires other tasks first. Tasks with no dependencies omit the annotation. Even if the breakdown produced one task, populate one entry — the loop below still applies.
+
+   9b. **Update status to `decided`** in the decision file. The `create-decided-tasks` hook will fire and print a reminder; that's belt-and-suspenders. The **primary** mechanism is the loop in 9c.
+
+   9c. **Delegate to `/ddw:task` — atomic batch creation, no logic duplication.** Read `${CLAUDE_PLUGIN_DIR}/skills/task/SKILL.md`. For each `(not yet created)` entry in `## Tasks`, follow that skill's **steps 5–11** as a delegated callee — **skip its step 4** (the AskUserQuestion prompt), since every field is derivable from the Architect Review and this decision file:
+
+   | `/ddw:task` field | Source |
+   |---|---|
+   | Title (slug) | the slug from the `## Tasks` entry |
+   | Goal | Architect Review → Task Breakdown → goal for this slug |
+   | Scope | Architect Review → Task Breakdown → scope for this slug |
+   | Non-Goals | Architect Review → Task Breakdown → non-goals (or empty) |
+   | Related Decision | this decision's ID |
+   | Priority | Architect Review → Task Breakdown → priority (default P2) |
+   | Scope size (S/M/L) | Architect Review → Task Breakdown → estimated scope (default S) |
+   | Multi-session | Architect Review → Task Breakdown → multi-session flag (default no) |
+
+   Process every entry once. After each delegated call, `/ddw:task` step 10 rewrites the entry to its full `TASK-{date}-{slug}` form — that's the per-entry done signal.
+
+   9d. **Verification gate — DO NOT EXIT THIS STEP UNTIL ALL TASKS EXIST.** Re-scan the decision file's `## Tasks` section:
+   - If any line still contains `(not yet created)` → run 9c for that entry now.
+   - If a line references `TASK-{date}-{slug}` but no file exists at `{workflowDir}/tasks/TASK-{date}-{slug}.md` → the write was lost; run 9c for that entry now.
+
+   Repeat the scan until both checks return zero misses. Only then proceed to step 9.5. This gate replaces the prior "trust the hook prompt" approach — hooks alone proved unreliable across partial failures and long sessions.
+
+   **Why this design:** `require-all-tasks` blocks `in_progress` on any task until ALL entries in `## Tasks` exist as files; `check-deps-done` additionally blocks `in_progress` on tasks whose `Depends-On` aren't `done`. Both downstream hooks assume the `## Tasks` list is complete and accurate — the 9c+9d gate is what makes that assumption true.
 
 9.5. **Commit proposed constraints** — after status is updated to `decided`:
    - Read the `## Architect Review` section of this decision file. Extract any items under **Proposed Constraints** (new guardrails and/or invariants).

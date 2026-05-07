@@ -6,6 +6,8 @@ disable-model-invocation: false
 
 **Invocation gate:** Only run this skill when (1) the user explicitly typed the `/ddw:task` command, (2) a hook enforcement message demands it, or (3) you proposed running this skill and the user clearly confirmed. Never auto-invoke from ambiguous context.
 
+**Reusable from other skills:** `/ddw:decision` reads this file and follows steps 5–11 to atomically batch-create planned tasks. When this skill is invoked **as a delegated callee** (caller has pre-filled all required fields — title, goal, scope, non-goals, priority, scope size, multi-session flag, related decision), **skip step 4** entirely. The interactive prompt is for direct human invocation only. Treat this contract as load-bearing: do not duplicate the task-creation procedure elsewhere.
+
 Create a new task file using the Decision-Driven Workflow.
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` (default: `workflows`). Resolve user identity by running `git config user.name || whoami`.
@@ -16,7 +18,7 @@ Create a new task file using the Decision-Driven Workflow.
 
 3. **Read the task template** at `{workflowDir}/tasks/TASK_TEMPLATE.md`.
 
-4. **Ask the user** (via AskUserQuestion) for the following if not already provided in $ARGUMENTS:
+4. **Ask the user** (via AskUserQuestion) for the following if not already provided in $ARGUMENTS or by a delegating skill:
    - **Title** (short, descriptive — becomes the filename slug, e.g. `auth-middleware`)
    - **Goal** (what must be implemented)
    - **Scope** (what is included)
@@ -25,6 +27,8 @@ Create a new task file using the Decision-Driven Workflow.
    - **Priority** (P1 = must do first, P2 = normal, P3 = nice to have; default P2)
    - **Estimated scope** — options: S (small, ~30min, single file), M (medium, 1-2hr), L (large, ≥2hr or multi-file architectural). Default S.
    - **Multi-session expected?** — yes/no. Default no.
+
+   **Skip this step entirely when invoked as a delegated callee from another skill (e.g., `/ddw:decision` step 9).** A delegated invocation supplies every field above. Asking again would defeat the purpose of the delegation.
 
 5. **Verify the decision is `decided`** — if a related decision was given, read the decision file and confirm its status is `decided`. If it's still `proposed`, warn the user and do not create the task.
 
