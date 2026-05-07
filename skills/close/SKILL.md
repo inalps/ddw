@@ -132,10 +132,17 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
    - Report: "Milestone '{name}' is now complete — all decisions archived."
    - If some decisions are NOT archived → report progress: "Milestone '{name}': {done}/{total} decisions complete."
 
-14. **Merge guidance** (git only — skip if not a git repo):
+14. **Worktree cleanup** (git only — skip if not a git repo or no `worktree.taskDir` configured):
+    - Resolve the task's worktree path from `ddw.json.worktree.taskDir` substituted with the task ID.
+    - If the directory exists AND has no uncommitted changes (`git -C <worktreePath> status --porcelain` is empty):
+      - Run `git -C ${workflowRoot} worktree remove <worktreePath>` to detach the worktree.
+      - Print: "Worktree `.worktrees/{task-id}/` removed."
+    - If the directory has uncommitted WIP, do NOT remove. Tell the user: "Worktree `.worktrees/{task-id}/` has uncommitted changes — leaving it for you to inspect. Run `git worktree remove --force <path>` once safe." This protects accidental loss of work-in-progress.
+
+15. **Merge guidance** (git only — skip if not a git repo):
     Remind the user: "Task archived. To merge your work: create a PR or `git checkout main && git merge {branch}`."
 
-15. **Report** a checklist confirming each item was completed or explicitly skipped with reason:
+16. **Report** a checklist confirming each item was completed or explicitly skipped with reason:
     - [ ] Task file status + Work Log
     - [ ] Changes section filled
     - [ ] CURRENT_SPEC (updated / skipped — reason)
@@ -144,6 +151,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     - [ ] Retrospective (logged / skipped)
     - [ ] Proposed constraints (all resolved / N/A)
     - [ ] Archived (task / task + decision)
-    - [ ] Logs synced
+    - [ ] Worktree cleanup (removed / kept — reason)
+    - [ ] Queue tick (advanced / empty)
 
 **Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

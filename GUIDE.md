@@ -311,12 +311,13 @@ DDW supports multiple developers working in parallel — and a single integratio
 
 ## Integration Loop
 
-Phase A's integration scripts move a finished task from "ready" → "merged into integration" → "closed".
+Phase A's integration loop moves a finished task from "ready" → "merged into integration" → "closed". **The user-facing surface is slash commands** — the bash scripts are implementation details that skills invoke.
 
 ### Setup (one-time)
 
+Create the integration worktree from `main`:
+
 ```bash
-# Create the integration worktree from main:
 git worktree add .worktrees/integration -b integration main
 ```
 
@@ -338,36 +339,45 @@ Configure `ddw.json`:
 }
 ```
 
-`syncFiles` are symlinked from the main repo into each new worktree (existing files are left alone). `commands.install` runs automatically when a worktree is missing `node_modules` / `.venv` / `vendor`. `commands.migrate` runs automatically when `ddw-stage` detects a migration file in the merged diff (configure `worktree.migrationGlob`).
+`syncFiles` are symlinked from the main repo into each new worktree (existing files are left alone). `commands.install` runs automatically when a worktree is missing `node_modules` / `.venv` / `vendor`. `commands.migrate` runs automatically when staging detects a migration file in the merged diff (configure `worktree.migrationGlob`).
 
-### Per-task flow
+### Per-task flow (slash commands only)
 
-```bash
-# 1. Spin up a worktree for the task
-bash ${CLAUDE_PLUGIN_DIR}/scripts/setup-worktree.sh TASK-20260507-feature-a
-
-# 2. Work in .worktrees/TASK-20260507-feature-a/, run /ddw:sendit, /ddw:review
-#    (ports auto-offset via .env.ddw — source it from your dev command)
-
-# 3. /ddw:sendit step 14 sets the task to ready_for_integration + Ready-At,
-#    and calls ddw-queue tick. If integration is idle, the task is auto-merged.
-
-# 4. Manual smoke-test in .worktrees/integration/
-
-# 5. /ddw:close on the task — clears integration.json, ticks the queue
+```
+/ddw:task                  ← author the task
+/ddw:sendit TASK-id        ← creates worktree, implements, runs review,
+                              flips status: ready_for_integration,
+                              calls queue tick → auto-merges into integration
+                              if integration was idle
+   (manual smoke-test in .worktrees/integration/)
+/ddw:close TASK-id         ← archives task, clears integration.json,
+                              advances queue, removes worktree
 ```
 
-### Scripts
+Exception paths:
 
-| Script | Purpose |
+```
+/ddw:queue list            ← what's in the FIFO?
+/ddw:queue status          ← what's currently testing?
+/ddw:queue tick            ← manually advance (rare; auto-called by sendit/close)
+
+/ddw:integration unstage   ← smoke-test failed, revert and flip back to in_progress
+/ddw:integration reset     ← something went sideways, wipe integration to origin/main
+```
+
+### Scripts (under the hood — invoked by skills)
+
+| Script | Invoked by |
 |---|---|
-| `setup-worktree.sh TASK-id [--base TASK-id]` | Create `.worktrees/TASK-id` on `task/TASK-id`. `--base` lets a task branch off another task instead of `main` (dependency chaining). Skips already-existing branches and tracked sync-target files. |
-| `ddw-stage TASK-id` | `git merge --no-ff task/TASK-id` into the integration worktree. Refuses if integration is dirty or another task is testing. Records `{"testing": TASK-id}` in `.ddw/integration.json`. |
-| `ddw-unstage TASK-id` | `git reset --hard HEAD~1` on integration. Flips task `ready_for_integration → in_progress`. Clears `integration.json`. |
-| `ddw-queue tick` | If integration is idle, stage the FIFO head (sorted by `Ready-At` asc). |
-| `ddw-queue list` | Print all `ready_for_integration` tasks sorted by `Ready-At`. |
-| `ddw-queue status` (or `ddw-integration-status`) | Print currently-testing task + queue + last 5 integration commits. |
-| `ddw-integration-reset [--yes]` | Reset integration worktree to `origin/main` (falls back to local `main`). Re-runs `commands.install`. Clears `integration.json`. Prompts for confirmation unless `--yes`. |
+| `setup-worktree.sh TASK-id [--base TASK-id]` | `/ddw:sendit` step 7.5 |
+| `ddw-stage TASK-id` | `ddw-queue tick` (transitively from `/ddw:sendit` step 14, `/ddw:close` step 13d, `/ddw:queue tick`) |
+| `ddw-unstage TASK-id` | `/ddw:integration unstage` |
+| `ddw-queue tick \| list \| status` | `/ddw:queue` |
+| `ddw-integration-status` | `/ddw:queue status` (delegate) |
+| `ddw-integration-reset [--yes]` | `/ddw:integration reset` |
+| `ddw-index.mjs` | Owner runs manually or via pre-commit hook |
+
+You can still call any script directly from a shell — the skill layer is for ergonomics, not gatekeeping.
 
 ### `.env.ddw` and port offsets
 
@@ -404,16 +414,18 @@ Completed tasks → `tasks/archive/`. Completed decisions → `decisions/archive
 ddw/
 ├── .claude-plugin/
 │   └── plugin.json                Plugin manifest
-├── skills/                        12 skills (Claude Code slash commands)
+├── skills/                        14 skills (Claude Code slash commands)
 │   ├── init/SKILL.md              Bootstrap DDW into a project
 │   ├── ideate/SKILL.md            Shape ideas → PRD (Shaper agent)
 │   ├── decision/SKILL.md          Create decisions (Architect agent)
 │   ├── prd/SKILL.md               PRD lifecycle helpers (close)
 │   ├── task/SKILL.md              Create tasks with acceptance criteria
-│   ├── sendit/SKILL.md            Start implementation (Developer agent)
+│   ├── sendit/SKILL.md            Auto-worktree, implement, review, queue (Developer agent)
 │   ├── qa/SKILL.md                Automated QA (QA agent)
 │   ├── review/SKILL.md            QA + owner checklist
-│   ├── close/SKILL.md             Spec update, drift, retro, archive
+│   ├── close/SKILL.md             Spec, drift, retro, archive, worktree cleanup, queue tick
+│   ├── queue/SKILL.md             Inspect/advance integration queue (list, tick, status)
+│   ├── integration/SKILL.md       Exception paths (unstage, reset)
 │   ├── drift/SKILL.md             Spec-code consistency check
 │   ├── architect/SKILL.md         Design review / bootstrap
 │   └── upgrade/SKILL.md           Upgrade project scaffolding

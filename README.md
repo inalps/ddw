@@ -99,6 +99,8 @@ Then run `/ddw:init`.
 
 ## Commands
 
+Everything is a slash command. The bash scripts under `scripts/` are implementation details — skills wrap them.
+
 | Command | Purpose |
 |---|---|
 | `/ddw:init` | Bootstrap DDW into a project |
@@ -106,24 +108,17 @@ Then run `/ddw:init`.
 | `/ddw:decision` | Create decision with architect review |
 | `/ddw:prd close PRD-id` | Close a PRD once its decisions exist |
 | `/ddw:task` | Break decision into scoped tasks |
-| `/ddw:sendit` | Start implementation; on review-pass, queues the task for integration |
+| `/ddw:sendit` | Auto-creates a per-task worktree, implements, runs review, queues for integration |
 | `/ddw:qa` | Automated QA: acceptance criteria + invariants |
 | `/ddw:review` | QA + tests + owner checklist |
-| `/ddw:close` | Spec update, drift check, retro, archive, advance the integration queue |
+| `/ddw:close` | Spec update, drift, retro, archive, **remove worktree**, advance queue |
+| `/ddw:queue` | `list` / `tick` / `status` — inspect or advance the integration queue |
+| `/ddw:integration` | `unstage <TASK-id>` / `reset` — exception paths for staged work |
 | `/ddw:drift` | Check spec-code consistency |
 | `/ddw:architect` | Design review or bootstrap constraints |
 | `/ddw:upgrade` | Upgrade project to latest plugin version |
 
-### Integration scripts (run from the consumer repo root)
-
-| Script | Purpose |
-|---|---|
-| `bash $CLAUDE_PLUGIN_DIR/scripts/setup-worktree.sh TASK-id` | Spin up a per-task git worktree |
-| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-queue tick \| list \| status` | Manage the integration FIFO |
-| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-stage TASK-id` | Merge a ready task into the integration worktree |
-| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-unstage TASK-id` | Revert it cleanly |
-| `bash $CLAUDE_PLUGIN_DIR/scripts/ddw-integration-reset --yes` | Reset integration worktree to origin/main |
-| `node $CLAUDE_PLUGIN_DIR/scripts/ddw-index.mjs --root .` | Regenerate the 4 log views |
+In the happy path you only ever need: `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:close`. The worktree, queue tick, and integration merge happen automatically.
 
 ---
 
@@ -132,8 +127,8 @@ Then run `/ddw:init`.
 - **Run `/clear` after each task**
   Context builds up and slows things down. Fresh start = fast start.
 
-- **Working on multiple tasks? Use the built-in worktree helper**
-  `bash $CLAUDE_PLUGIN_DIR/scripts/setup-worktree.sh TASK-id` spins up an isolated worktree with auto port-offset (`.env.ddw`), symlinked secrets, and a fresh `task/TASK-id` branch. `maxConcurrent` in `ddw.json` caps how many you can run.
+- **Multitask, no fiddling**
+  `/ddw:sendit` creates an isolated worktree per task automatically — port offset (`.env.ddw`), symlinked `.env*`, fresh `task/TASK-id` branch. `/ddw:close` removes the worktree when the task ships. `maxConcurrent` in `ddw.json` caps how many you can run in parallel.
 
 - **Don't overthink Git early on**
   Manual is fine. When it gets tedious, let the AI handle it.
