@@ -25,5 +25,20 @@
     "integrationDir": ".worktrees/integration",
     "syncFiles": [".env", ".env.local"],
     "maxConcurrent": 3
+  },
+  "smoke": {
+    "command": null,
+    "timeoutMinutes": 5,
+    "browser": {
+      "mode": "playwright-or-note",
+      "checks": []
+    }
+  },
+  "auto": {
+    "level": "self-driving",
+    "maxConcurrent": null,
+    "subagentTimeoutMinutes": 20,
+    "consecutiveErrorLimit": 3,
+    "confirm_on": ["destructive", "architecture", "external-side-effects"]
   }
 }

@@ -986,3 +986,193 @@ Read-only consumers: `ddw-index`, `/ddw:doctor`. **`ddw-index` does not mutate P
 ### The rule
 
 If you find yourself wanting to write a frontmatter field from a script not listed here, **stop**. Either: extend this table with a new authoritative writer, or refactor so the existing writer owns the change. Two writers on the same field is a coupling bug regardless of whether it shows up in testing.
+
+---
+
+## 14. Overnight Mode — `/ddw:auto`
+
+**The idea:** You make a few decisions, go to bed. Claude does the implementation work all night. You wake up to a list of what shipped and a short list of things that needed your call. No prompts waiting at 3am.
+
+### What it does
+
+Looks at the project state, finds work that's ready to do, does it, picks the next thing, repeats. When something needs your judgment (a real architectural call, anything destructive, a third-party API), it writes a note for the morning and moves on. Never sits and waits for you.
+
+### What it won't do
+
+- Make architectural decisions for you. If a decision is still in `proposed`, it stays there until you weigh in.
+- Replace `/ddw:sendit`, `/ddw:qa`, `/ddw:close`, etc. It runs those in turn, doesn't reinvent them.
+- Auto-merge to `main`. Stops at the integration worktree. Final merge is always you.
+
+### How to run it
+
+```
+/ddw:auto [--budget tasks=N,minutes=M] [--level self-driving|co-pilot|advisor] [--dry-run]
+```
+
+Defaults: 20 tasks max, 8 hours max, `self-driving`.
+
+One long session — not a cron job. Cron means re-loading everything every time, which is slow and wasteful.
+
+### How it picks what to do next
+
+Each round, it looks at the whole project and asks: "what's the most valuable thing I can do right now?" The answer follows this order — finish what's almost done before starting new work:
+
+| Order | When this is true… | …do this |
+|---|---|---|
+| 1 | A task passed review, just needs closing | `/ddw:close` (if tests + smoke green) |
+| 2 | A task is ready for integration | Stage it, run smoke |
+| 3 | A task is in `review_and_bugfix` and QA already passed | Move to `done` (only on `self-driving`) |
+| 4 | A task is built but QA hasn't run | `/ddw:qa` |
+| 5 | A task is `planned` and there's free capacity | `/ddw:sendit` |
+| 6 | A decision is `decided` but no tasks yet | `/ddw:task` |
+| 7 | A decision is still `proposed` | **Skip** — write a note for you |
+
+Ties break by oldest first.
+
+Each task runs in its own helper agent so the main orchestrator stays focused. Same idea as `/clear` between tasks during the day.
+
+### Three speed settings
+
+- **`advisor`** — picks the next thing, writes it down, stops. You drive. (Closest to today's flow.)
+- **`co-pilot`** — runs the build-and-test work (rows 4–6). Stops at anything that closes or stages.
+- **`self-driving`** — runs everything, with the safety rules below.
+
+### Never wait — write a note instead
+
+If any of these come up, the task gets dropped to the morning list and the loop moves on:
+
+- **Real architectural choice** — helper says it can't resolve a spec/code conflict on its own.
+- **Destructive operation** — schema migration, `rm -rf`, force-push, secret rotation, removing a dependency, or anything else listed in `auto.confirm_on`.
+- **Third-party API call** — anything that hits external services without a recorded dry-run.
+- **QA failed twice** — first fail, retry with the QA notes. Second fail, drop to morning.
+- **Tests or smoke still red after one fix attempt** — same one-retry rule.
+- **Helper takes too long** — over `auto.subagentTimeoutMinutes` (20 by default).
+
+Every drop writes: task id, why, last thing it tried, link to the helper's transcript.
+
+### Smoke test + browser check
+
+After a task ships, run a smoke test. Required for anything touching app or service code.
+
+```jsonc
+// ddw.json additions
+{
+  "smoke": {
+    "command": "pnpm smoke",
+    "timeoutMinutes": 5,
+    "browser": {
+      "mode": "playwright-or-note",   // "playwright" | "playwright-or-note" | "note-only"
+      "checks": [
+        { "url": "http://localhost:3000/health", "expect": "status=200" },
+        { "url": "http://localhost:3000/", "expect": "selector=#app" }
+      ]
+    }
+  }
+}
+```
+
+For browser checks, try this in order:
+
+1. If Playwright is hooked up, drive Chrome through the checks. Pass/fail is final.
+2. Otherwise, use `curl` for any HTTP status checks (still final). Things that need to look at the page get pushed to step 3.
+3. Otherwise, mark the task `done` but add a "check this in Chrome" line to the morning list — URL, what to look for, screenshot if there is one.
+
+`mode: "note-only"` skips 1 and 2 — for projects with no web UI.
+
+If smoke fails: unstage the task, put it back at the front of the integration line, log it.
+
+### How many at once
+
+```jsonc
+// ddw.json additions
+{
+  "auto": {
+    "maxConcurrent": null,            // null → min(worktree.maxConcurrent * 2, 4)
+    "subagentTimeoutMinutes": 20,
+    "consecutiveErrorLimit": 3,
+    "confirm_on": ["destructive", "architecture", "external-side-effects"],
+    "level": "self-driving"
+  }
+}
+```
+
+Daytime cap is 3 worktrees on the reference setup. Doubling to 6 starves CPU and ports, so hard cap at 4 overnight. Tunable. Only `/ddw:sendit` runs in parallel; QA, close, and architect run one at a time (they're fast).
+
+### When it stops
+
+Any of these and the orchestrator writes a final summary and exits:
+
+- Hit the task count or time budget.
+- No more workable items (queue empty, nothing `planned`, no `decided`-without-tasks).
+- 3 hard errors in a row.
+- A `.ddw/STOP` file appears at the repo root.
+- You hit Ctrl-C.
+
+### Logs (full trail, no exceptions)
+
+```
+.ddw/logs/auto/<run-id>/
+  run.json         # settings, start/end time, why it stopped
+  tick.log         # one line per round: timestamp, action, task id, result
+  inbox.md         # the morning summary (this is what you read first)
+  tasks/
+    TASK-id.md     # what the helper agent did, full transcript
+  smoke/
+    TASK-id.json   # smoke result, browser checks, screenshots if any
+```
+
+`run-id` is the start timestamp (e.g. `2026-05-09T22-00-00Z`). Gitignored, kept forever locally.
+
+### Morning summary
+
+`.ddw/logs/auto/<run-id>/inbox.md`, also linked at `.ddw/inbox/latest.md` so it's easy to find.
+
+```markdown
+# DDW Auto Run — 2026-05-09 (8h12m)
+
+## Shipped (12)
+- TASK-A1 — auth refactor → closed at 23:14
+- TASK-A2 — rate-limiter middleware → closed at 23:48
+- ...
+
+## Check in Chrome (3)
+- TASK-B1 — login form: open http://localhost:3000/login, check error toast renders red
+- ...
+
+## Decisions waiting on you (2)
+- DEC-014 (proposed) — caching strategy for the search index
+  Why: architectural — Redis vs in-memory needs your call
+- DEC-015 (proposed) — error tracking vendor
+
+## Stuck (4)
+- TASK-C1 — schema migration → destructive op
+  Last tried: stopped before `db:push`
+- TASK-C2 — payment integration → hits Stripe (no dry-run set up)
+- TASK-D1 — QA failed twice (acceptance criterion #3); see tasks/TASK-D1.md
+- TASK-D2 — smoke red after one fix attempt; see smoke/TASK-D2.json
+
+## Hard errors (0)
+```
+
+That file is the only thing you have to read with coffee. Everything else is there if you want to dig.
+
+### Frontmatter & schema changes
+
+No new task or DEC fields. The orchestrator only reads existing state and writes to its own log directory.
+
+### What ships when
+
+**Phase A (week 1):** `/ddw:auto` itself, rows 4–5 only (qa + sendit), `co-pilot` only, browser `note-only` mode, full logs and morning summary. **No** auto-close, **no** auto-stage, **no** Playwright. Goal: prove the loop works on a real overnight run.
+
+**Phase B:** Add row 1 (auto-close) and row 2 (auto-stage), the `self-driving` level, the `playwright-or-note` browser mode, the `.ddw/STOP` file.
+
+**Phase C:** Add row 3 (auto-advance review) and row 6 (auto-create tasks from decisions), full Playwright with screenshots.
+
+Phase A is most of the value on its own: ten tasks ship overnight, you wake up to a summary.
+
+### Rejected ideas
+
+- **Cron loop.** Reloads everything each round — slow and expensive. One long session wins.
+- **Auto-decide architecture.** Defeats the whole point of DDW. Decisions stay yours.
+- **Auto-merge to main.** Last step is always a human.
+- **Slack or email notifications.** Out of scope. The morning summary file is enough. Add later if it isn't.

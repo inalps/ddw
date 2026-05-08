@@ -512,6 +512,97 @@ When a session ends mid-task, the `## Session Handoff` section preserves context
 
 DDW gets smarter over time. Every task completion is a chance to tighten the harness.
 
+## Overnight Mode (`/ddw:auto`)
+
+The owner makes a few decisions, goes to bed. `/ddw:auto` walks the pipeline autonomously: implements `planned` tasks, runs QA, stages ready ones, smokes, closes. When it hits anything that needs an owner call, it logs to a morning inbox and moves to the next workable item. Never sits and waits.
+
+```
+  /ddw:auto [--budget tasks=N,minutes=M] [--level co-pilot|self-driving|advisor] [--dry-run]
+     │
+     ├── Pick next workable item by priority order:
+     │     1. done    → close (self-driving)
+     │     2. ready   → stage + smoke (self-driving)
+     │     3. r&b CLEAR → advance to done (self-driving)
+     │     4. impl-done → /ddw:qa
+     │     5. planned + capacity → /ddw:sendit
+     │     6. decided no-tasks → /ddw:task (self-driving)
+     │     7. proposed → skip → morning inbox
+     │
+     ├── Each implementation task → fresh subagent (own context)
+     ├── Up to auto.maxConcurrent sendit subagents in parallel
+     ├── QA / close / task creation: sequential (cheap, fast)
+     │
+     └── Exit on: budget hit, queue empty, 3 errors in a row,
+                  .ddw/STOP file, owner Ctrl-C
+```
+
+### Autonomy levels
+
+| Level | Runs | Stops at |
+|---|---|---|
+| `advisor` | Nothing — just plans | Always (one pass) |
+| `co-pilot` | rows 4–5 (qa, sendit) | Anything that closes or stages |
+| `self-driving` | rows 1–6 | Skip-and-log conditions only |
+
+### Skip-and-log conditions (never blocks the loop)
+
+- Task body contains destructive keywords (migrations, `rm`, `DROP`, secret rotation, …)
+- External API call without `dry_run` / `MOCK_EXTERNAL` / staging marker
+- Subagent reports `stopped-for-human`
+- QA blocks twice for the same task
+- Smoke red after one retry
+- Subagent timeout (`auto.subagentTimeoutMinutes`, default 20)
+
+### Smoke + browser checks
+
+```
+ddw.json
+└── smoke
+    ├── command: "pnpm smoke"        (exit 0 = pass)
+    ├── timeoutMinutes: 5
+    └── browser
+        ├── mode: "playwright-or-note"
+        └── checks:
+              - { url: "/health", expect: "status=200" }
+              - { url: "/login",  expect: "selector=#login-form" }
+```
+
+Browser check cascade:
+1. Playwright MCP available → drive Chrome, pass/fail is final.
+2. Else → `curl` for `status=*` checks; `selector=*` checks become "Check in Chrome" inbox notes.
+3. `mode: "note-only"` → skip 1 and 2 entirely.
+
+### Audit trail (every action recorded)
+
+```
+.ddw/logs/auto/<run-id>/
+  run.json         settings, counters, exit reason
+  tick.log         one line per loop iteration
+  inbox.md         the morning summary (also at .ddw/inbox/latest.md)
+  tasks/<id>.md    per-task subagent report (skill name, result, files changed)
+  smoke/<id>.json  smoke + browser check results
+```
+
+`<run-id>` = ISO timestamp of run start. Logs gitignored, kept locally indefinitely.
+
+### Morning inbox (the only file you have to read)
+
+```markdown
+# DDW Auto Run — 2026-05-09T22-00-00Z | self-driving | 8h12m
+
+## Shipped (12)            [tasks that closed / staged / advanced]
+## Check in Chrome (3)     [UI-only tasks — open URL, verify visually]
+## Decisions waiting on you (2)   [proposed DECs — your call]
+## Stuck (4)               [blocked: destructive op, QA failed twice, …]
+## Hard errors (0)         [subagent crashes, missing reports]
+```
+
+Each entry links to its detailed log. The inbox is the contract — drill down only when you want details.
+
+### Kill switch
+
+`touch .ddw/STOP` at the repo root → orchestrator finishes the current iteration and exits cleanly with `exit_reason: kill-switch`. Removing the file before the next run re-enables.
+
 ## Caveats
 
 ### What holds

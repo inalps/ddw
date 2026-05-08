@@ -117,6 +117,7 @@ Everything is a slash command. The bash scripts under `scripts/` are implementat
 | `/ddw:drift` | Check spec-code consistency |
 | `/ddw:architect` | Design review or bootstrap constraints |
 | `/ddw:upgrade` | Upgrade project to latest plugin version |
+| `/ddw:auto` | Overnight orchestrator. Loops the pipeline autonomously; logs blockers to morning inbox |
 
 In the happy path you only ever need: `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:close`. The worktree, queue tick, and integration merge happen automatically.
 
