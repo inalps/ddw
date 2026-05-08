@@ -56,6 +56,20 @@ If `specPath` is set in config, check if the spec file follows the current templ
 
 Check the DDW block in `CLAUDE.md` against the current expected content from the init skill's Step 8.
 
+### 2.7 — Top-level `.ddw/` migration
+
+Older DDW versions placed runtime/operational state at `${workflowRoot}/.ddw/` (top of the repo). Current versions place it under `${workflowDir}/.ddw/` so the require-active-task hook's `*/$DDW_WORKFLOW_DIR/*` skip rule covers it.
+
+Check:
+- If `${workflowRoot}/.ddw/` exists AND `${workflowRoot}/${workflowDir}/.ddw/` does NOT exist → mark NEEDS-MIGRATE.
+- If both exist → mark MERGE-NEEDED (very rare; surface to owner).
+- If only the new location exists → UP-TO-DATE.
+- If neither exists → UP-TO-DATE (nothing to migrate; auto run will create on demand).
+
+### 2.8 — `.gitignore`
+
+Check that `${workflowRoot}/.gitignore` includes a pattern matching `${workflowDir}/.ddw/`. If absent → mark MISSING.
+
 ---
 
 ## Step 3 — Present Upgrade Report
@@ -132,6 +146,21 @@ If the spec exists but doesn't follow the new template structure:
 
 If the DDW block is outdated:
 - Replace the existing DDW block with the current version from init Step 5
+
+### 4.7 — Migrate top-level `.ddw/`
+
+If Step 2.7 reported NEEDS-MIGRATE:
+- `mv ${workflowRoot}/.ddw ${workflowRoot}/${workflowDir}/.ddw`
+- Verify the move with `ls ${workflowRoot}/${workflowDir}/.ddw/` and confirm `${workflowRoot}/.ddw/` is gone.
+- If Step 2.7 reported MERGE-NEEDED, surface the conflict to the owner with the full file listing of both locations and ask for guidance — do NOT auto-merge.
+
+### 4.8 — Patch `.gitignore`
+
+If Step 2.8 reported MISSING:
+- Append a `# DDW runtime state (per-developer, do not commit)` comment block at the end of `.gitignore` (or after the existing DDW-related section if one exists).
+- Add the line `${workflowDir}/.ddw/` (e.g. `workflows/.ddw/`) on its own line.
+- If `.gitignore` doesn't exist, create it with just this block.
+- Never reorder or remove existing lines.
 - Do not touch any other content in CLAUDE.md
 
 ---

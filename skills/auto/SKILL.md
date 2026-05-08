@@ -67,16 +67,16 @@ Derive `{run-id}` by replacing `:` with `-` in `{run-start}` (e.g. `2026-05-09T2
 
 Create directories under `{workflowRoot}`:
 ```
-.ddw/logs/auto/{run-id}/
-.ddw/logs/auto/{run-id}/tasks/
-.ddw/logs/auto/{run-id}/smoke/
+{workflowDir}/.ddw/logs/auto/{run-id}/
+{workflowDir}/.ddw/logs/auto/{run-id}/tasks/
+{workflowDir}/.ddw/logs/auto/{run-id}/smoke/
 ```
 
 If `--dry-run`: print to user once: `"DRY RUN — no files will be modified, no subagents will run."` All actions in step 5 are logged with a `[DRY RUN]` prefix instead of executed; subagents are not spawned.
 
 ## 4. Write run.json and initialize logs
 
-Write `.ddw/logs/auto/{run-id}/run.json`:
+Write `{workflowDir}/.ddw/logs/auto/{run-id}/run.json`:
 ```json
 {
   "run_id": "{run-id}",
@@ -102,13 +102,13 @@ Write `.ddw/logs/auto/{run-id}/run.json`:
 }
 ```
 
-Write `.ddw/logs/auto/{run-id}/tick.log` header:
+Write `{workflowDir}/.ddw/logs/auto/{run-id}/tick.log` header:
 ```
 # DDW Auto Run {run-id} | level={level} | budget=tasks:{N},minutes:{M}
 # timestamp | action | task-or-dec-id | result | reason
 ```
 
-Write `.ddw/logs/auto/{run-id}/inbox.md` with header only:
+Write `{workflowDir}/.ddw/logs/auto/{run-id}/inbox.md` with header only:
 ```markdown
 # DDW Auto Run — {run-start} | {level}
 
@@ -136,7 +136,7 @@ Stop the loop and jump to step 6 if any of these are true:
 - **Time budget exhausted:** elapsed minutes since `{run-start}` ≥ `budget.minutes`.
 - **Task budget exhausted:** `counters.tasks_dispatched ≥ budget.tasks`.
 - **Consecutive errors:** `counters.consecutive_errors ≥ config.consecutiveErrorLimit`.
-- **Kill switch:** file `{workflowRoot}/.ddw/STOP` exists.
+- **Kill switch:** file `{workflowRoot}/{workflowDir}/.ddw/STOP` exists.
 - **Queue empty:** previous iteration of step 5.3 returned no workable item AND no in-flight subagents remain.
 - **Advisor mode:** `level == advisor` — write the planned action list to inbox and exit (see step 5.A).
 
@@ -168,7 +168,7 @@ Read frontmatter / minimal sections only.
 
 **Decisions:** glob `{workflowDir}/{paths.decisions}/DEC-*.md`. For each, parse `status:` and `id:` fields.
 
-**Integration state:** read `{workflowRoot}/.ddw/integration.json` if it exists; capture `testing` field.
+**Integration state:** read `{workflowRoot}/{workflowDir}/.ddw/integration.json` if it exists; capture `testing` field.
 
 Build sets keyed by status. Exclude any task in `inflight_tasks`.
 
@@ -181,7 +181,7 @@ Walk the rows in order. Take the **first** row with a workable candidate. Within
 - Action: pre-verify (step 5.5a), then dispatch `/ddw:close` subagent.
 
 **Row 2 — Auto-stage** (requires `level == self-driving`)
-- Trigger: a task has `**Status:** ready_for_integration` AND `.ddw/integration.json.testing` is empty/absent.
+- Trigger: a task has `**Status:** ready_for_integration` AND `{workflowDir}/.ddw/integration.json.testing` is empty/absent.
 - Action: stage + smoke directly (step 5.5b — no subagent).
 
 **Row 3 — Advance review** (requires `level == self-driving`)
@@ -236,7 +236,7 @@ Without a subagent:
 
 ### 5.5b Stage + smoke (Row 2 — direct, no subagent)
 
-1. Run: `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root {workflowRoot}`. This advances FIFO queue and writes the staged TASK id to `.ddw/integration.json.testing`. Capture stdout/stderr.
+1. Run: `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root {workflowRoot}`. This advances FIFO queue and writes the staged TASK id to `{workflowDir}/.ddw/integration.json.testing`. Capture stdout/stderr.
 2. If queue tick reported "nothing to stage", log `staging-noop` and continue loop (do NOT increment `tasks_dispatched`).
 3. Run: `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-stage --root {workflowRoot}`. (The stage script reads the testing field; no TASK id arg needed.)
 4. Run smoke (step 5.7).
@@ -293,7 +293,7 @@ Your ONLY job: run /{ddw-skill-name} for {id} in the project at {workflowRoot}, 
 ## How to write the report (REQUIRED, even on failure)
 
 After the skill finishes (or you stop it), write this file:
-{workflowRoot}/.ddw/logs/auto/{run-id}/tasks/{id}.md
+{workflowRoot}/{workflowDir}/.ddw/logs/auto/{run-id}/tasks/{id}.md
 
 With this exact frontmatter and body:
 ---
@@ -355,7 +355,7 @@ Otherwise:
     - If `playwright_available && smoke.browser.mode != "note-only"`:
       - Use the available Playwright tool to navigate to `{url}` and check the selector.
       - Pass if the element exists.
-      - On pass: optionally capture screenshot to `.ddw/logs/auto/{run-id}/smoke/{TASK-id}-{idx}.png`.
+      - On pass: optionally capture screenshot to `{workflowDir}/.ddw/logs/auto/{run-id}/smoke/{TASK-id}-{idx}.png`.
     - Else:
       - Mark this check as `note-only` (neither pass nor fail).
       - Add a "Check in Chrome" entry to `inbox_sections.browser_verify`: TASK id, URL, selector, "verify the element renders correctly".
@@ -365,7 +365,7 @@ Otherwise:
 - Else if `script_smoke == "pass"` (or `"skipped"`): overall = `pass`.
 - A `note-only` browser check does NOT cause failure — the orchestrator proceeds and the task is added to the browser-verify list.
 
-Write `.ddw/logs/auto/{run-id}/smoke/{TASK-id}.json`:
+Write `{workflowDir}/.ddw/logs/auto/{run-id}/smoke/{TASK-id}.json`:
 ```json
 {
   "task": "{TASK-id}",
@@ -385,7 +385,7 @@ Return overall result.
 After the Agent tool returns (success, error, or timeout):
 
 1. **Check timeout:** if elapsed > `subagentTimeoutMinutes`, treat as `hard_error` with reason `"subagent timeout"`.
-2. **Read the report file** at `.ddw/logs/auto/{run-id}/tasks/{id}.md`. If missing: `hard_error`, reason `"report file missing"`.
+2. **Read the report file** at `{workflowDir}/.ddw/logs/auto/{run-id}/tasks/{id}.md`. If missing: `hard_error`, reason `"report file missing"`.
 3. **Parse the frontmatter** for `result` and `final_status`.
 4. **Read the task file's current `**Status:**` field** to verify it matches `final_status`.
 
@@ -430,7 +430,7 @@ Remove the id from `inflight_tasks`.
 
 ### 5.10 Update run.json
 
-Rewrite `.ddw/logs/auto/{run-id}/run.json` with current `counters`. (Atomic — write to a tmp file, then rename.)
+Rewrite `{workflowDir}/.ddw/logs/auto/{run-id}/run.json` with current `counters`. (Atomic — write to a tmp file, then rename.)
 
 Continue back to step 5.1.
 
@@ -451,7 +451,7 @@ Set:
 
 ### 6.3 Write final inbox.md
 
-Replace `.ddw/logs/auto/{run-id}/inbox.md` contents with:
+Replace `{workflowDir}/.ddw/logs/auto/{run-id}/inbox.md` contents with:
 
 ```markdown
 # DDW Auto Run — {run-start} | {level} | {duration HhMm}
@@ -475,12 +475,12 @@ Exit reason: {exit_reason}
 {for each entry in inbox_sections.stuck:}
 - {id} — {title} → {reason}
   Last tried: {action}
-  Details: .ddw/logs/auto/{run-id}/tasks/{id}.md
+  Details: {workflowDir}/.ddw/logs/auto/{run-id}/tasks/{id}.md
 
 ## Hard errors ({count})
 {for each entry in inbox_sections.hard_errors:}
 - {id} — {title}: {error summary}
-  Details: .ddw/logs/auto/{run-id}/tasks/{id}.md
+  Details: {workflowDir}/.ddw/logs/auto/{run-id}/tasks/{id}.md
 ```
 
 If a section has count 0, still include the heading with `(0)` — empty sections are informative.
@@ -488,11 +488,11 @@ If a section has count 0, still include the heading with `(0)` — empty section
 ### 6.4 Symlink latest
 
 ```bash
-mkdir -p {workflowRoot}/.ddw/inbox
-ln -sf ../logs/auto/{run-id}/inbox.md {workflowRoot}/.ddw/inbox/latest.md
+mkdir -p {workflowRoot}/{workflowDir}/.ddw/inbox
+ln -sf ../logs/auto/{run-id}/inbox.md {workflowRoot}/{workflowDir}/.ddw/inbox/latest.md
 ```
 
-(Relative symlink so the link survives if `.ddw` is moved.)
+(Relative symlink so the link survives if `{workflowDir}/.ddw` is moved.)
 
 ### 6.5 Print summary
 
@@ -504,7 +504,7 @@ Auto run complete.
   Level: {level} | Duration: {Xh Ym}
   Shipped: {N} | Stuck: {N} | Errors: {N} | Decisions waiting: {N}
   Browser-verify items: {N}
-  Morning inbox: .ddw/inbox/latest.md
+  Morning inbox: {workflowDir}/.ddw/inbox/latest.md
   Exit reason: {exit_reason}
 ```
 
@@ -528,12 +528,12 @@ If any of these arise, log to inbox and move on. Never block on a prompt:
 ## Reference: Frontmatter writes
 
 This skill writes to:
-- `.ddw/logs/auto/{run-id}/run.json` (sole writer)
-- `.ddw/logs/auto/{run-id}/tick.log` (sole writer)
-- `.ddw/logs/auto/{run-id}/inbox.md` (sole writer)
-- `.ddw/logs/auto/{run-id}/tasks/{id}.md` (written by spawned subagents)
-- `.ddw/logs/auto/{run-id}/smoke/{id}.json` (sole writer)
-- `.ddw/inbox/latest.md` (symlink)
+- `{workflowDir}/.ddw/logs/auto/{run-id}/run.json` (sole writer)
+- `{workflowDir}/.ddw/logs/auto/{run-id}/tick.log` (sole writer)
+- `{workflowDir}/.ddw/logs/auto/{run-id}/inbox.md` (sole writer)
+- `{workflowDir}/.ddw/logs/auto/{run-id}/tasks/{id}.md` (written by spawned subagents)
+- `{workflowDir}/.ddw/logs/auto/{run-id}/smoke/{id}.json` (sole writer)
+- `{workflowDir}/.ddw/inbox/latest.md` (symlink)
 
 **Direct task-file writes (Row 3 only):**
 - `**Status:**` flip from `review_and_bugfix` → `done` (self-driving level only)

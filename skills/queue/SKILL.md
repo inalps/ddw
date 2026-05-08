@@ -8,7 +8,7 @@ disable-model-invocation: false
 
 Inspect or advance the integration queue. Subcommand: $ARGUMENTS (default: `status`).
 
-The integration queue is the FIFO of tasks with `**Status:** ready_for_integration`, sorted ascending by `**Ready-At:**`. Only one task tests at a time — `.ddw/integration.json.testing` records the current occupant.
+The integration queue is the FIFO of tasks with `**Status:** ready_for_integration`, sorted ascending by `**Ready-At:**`. Only one task tests at a time — `{workflowDir}/.ddw/integration.json.testing` records the current occupant.
 
 0. **Read voice** — read `{workflowDir}/VOICE.md` (if it exists) and follow its style.
 
@@ -25,4 +25,4 @@ The integration queue is the FIFO of tasks with `**Status:** ready_for_integrati
    - `tick` → run `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root ${workflowRoot}` and print the output. If a task was staged, mention which one. If integration was busy, mention which task is testing.
    - `status` → run `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue status --root ${workflowRoot}` (which internally delegates to `ddw-integration-status`) and print the output.
 
-4. **Authority note:** this skill never writes task frontmatter or `.ddw/integration.json` directly — it only invokes the bash scripts, which are the §13 authoritative writers for `testing`. `tick` may transitively trigger `ddw-stage` (which sets `testing`).
+4. **Authority note:** this skill never writes task frontmatter or `{workflowDir}/.ddw/integration.json` directly — it only invokes the bash scripts, which are the §13 authoritative writers for `testing`. `tick` may transitively trigger `ddw-stage` (which sets `testing`).

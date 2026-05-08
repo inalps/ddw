@@ -52,9 +52,18 @@ if [[ -z "$ROOT" ]]; then
 fi
 ROOT="$(cd "$ROOT" && pwd)"
 
-# Check ddw.json
-if [[ ! -f "${ROOT}/ddw.json" ]]; then
-  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+# Discover ddw.json (supports several install layouts)
+DDW_JSON_DIR=""
+if [[ -f "${ROOT}/ddw.json" ]]; then
+  DDW_JSON_DIR="${ROOT}"
+elif [[ -f "${ROOT}/workflows/ddw.json" ]]; then
+  DDW_JSON_DIR="${ROOT}/workflows"
+elif [[ -f "${ROOT}/.workflows/ddw.json" ]]; then
+  DDW_JSON_DIR="${ROOT}/.workflows"
+elif [[ -f "${ROOT}/.claude/ddw.json" ]]; then
+  DDW_JSON_DIR="${ROOT}/.claude"
+else
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json, ${ROOT}/workflows/ddw.json, or other expected locations. Run /ddw:init first." >&2
   exit 1
 fi
 
@@ -64,7 +73,7 @@ read_config() {
   local key="$1"
   local default_val="${2:-}"
   local val
-  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  val=$(node "$node_helper" "$key" "$DDW_JSON_DIR" 2>/dev/null) || val="$default_val"
   echo "$val"
 }
 
@@ -77,7 +86,8 @@ else
 fi
 
 INSTALL_CMD=$(read_config "commands.install" "")
-DDW_DIR="${ROOT}/.ddw"
+WORKFLOW_DIR=$(read_config "workflowDir" "workflows")
+DDW_DIR="${ROOT}/${WORKFLOW_DIR}/.ddw"
 INTEGRATION_JSON="${DDW_DIR}/integration.json"
 
 # --- Confirmation prompt ---
