@@ -198,20 +198,24 @@ Use **AskUserQuestion** to collect remaining config (questions 5-6 together):
 
 ## Step 6 — Write Config
 
-Create the config file at `{workflowDir}/ddw.json` (git-tracked, shared by team):
+Create the config file at `{workflowDir}/ddw.json` (git-tracked, shared by team).
 
-```json
-{
-  "project": "{project name}",
-  "workflowDir": "{workflow directory}",
-  "specPath": "{spec path — always set, defaults to docs/CURRENT_SPEC.md}",
-  "references": ["{path1}", "{path2}"],
-  "testCommand": "{test command or null}",
-  "autoUpdateSpec": true/false
-}
-```
+**Source of truth:** `templates/ddw.json.example` in the plugin root. Read it, parse it as JSON, then override only the user-collected fields. This way the canonical schema lives in one place — when fields like `worktree`, `commands`, `auto`, `smoke`, etc. are added to the example, new projects get them automatically via init without this skill needing edits.
 
-The `references` array contains paths to user-provided reference documents and any PRDs generated during init. Empty array `[]` if no references were provided and no ideation was done.
+**Procedure:**
+
+1. Read `templates/ddw.json.example` from the plugin root.
+2. Parse as JSON.
+3. **Add** a top-level `"project"` field set to the user-selected project name (the example doesn't carry a project-specific name).
+4. **Override** these fields with user-collected values:
+   - `workflowDir` ← user-selected workflow directory
+   - `specPath` ← user-selected spec path (default `docs/CURRENT_SPEC.md`)
+   - `testCommand` ← user-selected test command, or `null`
+   - `autoUpdateSpec` ← user-selected boolean
+5. **Set** `references` to an array of paths gathered during Step 4 (empty `[]` if none).
+6. Write the merged JSON to `{workflowDir}/ddw.json` with 2-space indentation.
+
+The resulting file should contain ALL keys from `ddw.json.example` (`schemaVersion`, `worktree`, `commands`, `auto`, `smoke`, `paths`, `userName`, `testFilePattern`, etc.) plus the project-specific overrides — not a stripped subset.
 
 **User identity** is resolved at runtime, not stored in config:
 ```bash
