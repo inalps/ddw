@@ -2,8 +2,12 @@
 /**
  * ddw-index — read-only index generator for Decision-Driven Workflow consumer repos.
  *
- * Reads task/DEC/PRD source files and overwrites four derived view files in logs/:
+ * Reads task/DEC/PRD source files (under {workflowDir}/{tasks,decisions,prds}/)
+ * and overwrites four derived view files in {workflowDir}/logs/:
  *   TASK_LOG.md, DECISION_LOG.md, PRD_LOG.md, RETRO_LOG.md
+ *
+ * Resolves workflowDir from ddw.json (searched in root, root/workflows,
+ * root/.workflows, root/.claude — same as bash scripts).
  *
  * Strictly pure: never mutates source files, never moves or deletes files.
  * Zero npm dependencies — Node 20+ built-ins only.
@@ -564,12 +568,48 @@ async function main() {
   }
 
   const root = path.resolve(opts.root);
-  const logsDir = path.join(root, 'logs');
 
-  // Load all source files
-  const { tasks, errors: taskErrors } = loadTaskFiles(root);
-  const { decisions, errors: decErrors } = loadDecisionFiles(root);
-  const { prds, errors: prdErrors } = loadPrdFiles(root);
+  // Locate ddw.json (try root first, then standard workflowDir locations)
+  // and resolve workflowDir from it. This determines the base path for
+  // tasks/, decisions/, prds/, and logs/ — matching the bash scripts'
+  // discovery rules so multi-location installs work consistently.
+  const ddwJsonCandidates = [
+    root,
+    path.join(root, 'workflows'),
+    path.join(root, '.workflows'),
+    path.join(root, '.claude'),
+  ];
+  let ddwJsonDir = null;
+  for (const dir of ddwJsonCandidates) {
+    if (fs.existsSync(path.join(dir, 'ddw.json'))) {
+      ddwJsonDir = dir;
+      break;
+    }
+  }
+
+  let workflowDir = '';
+  if (ddwJsonDir) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(ddwJsonDir, 'ddw.json'), 'utf8'));
+      // workflowDir is relative to root. Default to whichever subdir we
+      // found ddw.json in (legacy: root → ''; standard: 'workflows').
+      if (typeof cfg.workflowDir === 'string') {
+        workflowDir = cfg.workflowDir;
+      } else {
+        workflowDir = path.relative(root, ddwJsonDir);
+      }
+    } catch {
+      workflowDir = path.relative(root, ddwJsonDir);
+    }
+  }
+  // base = where tasks/, decisions/, prds/, logs/ live
+  const base = workflowDir ? path.join(root, workflowDir) : root;
+  const logsDir = path.join(base, 'logs');
+
+  // Load all source files (using base, not root)
+  const { tasks, errors: taskErrors } = loadTaskFiles(base);
+  const { decisions, errors: decErrors } = loadDecisionFiles(base);
+  const { prds, errors: prdErrors } = loadPrdFiles(base);
 
   const allErrors = [...taskErrors, ...decErrors, ...prdErrors];
   if (allErrors.length > 0) {

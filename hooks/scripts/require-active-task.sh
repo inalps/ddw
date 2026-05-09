@@ -23,6 +23,7 @@ if [[ "$FILE_PATH" == *"/$DDW_WORKFLOW_DIR/"* ]] || \
    [[ "$FILE_PATH" == *".claude/"* ]] || \
    [[ "$FILE_PATH" == *"/docs/"* ]] || \
    [[ "$FILE_PATH" == *"/tasks/"* ]] || \
+   [[ "$FILE_PATH" == *"/.gitignore" || "$FILE_PATH" == *".gitignore" ]] || \
    [[ "$FILE_PATH" == *".md" && "$FILE_PATH" != *"index"* ]]; then
   exit 0
 fi
