@@ -65,9 +65,16 @@ if [[ -z "$ROOT" ]]; then
 fi
 ROOT="$(cd "$ROOT" && pwd)"
 
-# --- Step 2: Check ddw.json exists ---
-if [[ ! -f "${ROOT}/ddw.json" ]]; then
-  echo "Error: ddw.json not found at ${ROOT}/ddw.json. Run /ddw:init first." >&2
+# --- Step 2: Locate ddw.json (try root first, then standard workflowDir locations) ---
+DDW_JSON_DIR=""
+for candidate in "${ROOT}" "${ROOT}/workflows" "${ROOT}/.workflows" "${ROOT}/.claude"; do
+  if [[ -f "${candidate}/ddw.json" ]]; then
+    DDW_JSON_DIR="${candidate}"
+    break
+  fi
+done
+if [[ -z "$DDW_JSON_DIR" ]]; then
+  echo "Error: ddw.json not found at ${ROOT}/ddw.json, ${ROOT}/workflows/ddw.json, or other expected locations. Run /ddw:init first." >&2
   exit 1
 fi
 
@@ -78,7 +85,7 @@ read_config() {
   local key="$1"
   local default_val="${2:-}"
   local val
-  val=$(node "$node_helper" "$key" "$ROOT" 2>/dev/null) || val="$default_val"
+  val=$(node "$node_helper" "$key" "$DDW_JSON_DIR" 2>/dev/null) || val="$default_val"
   echo "$val"
 }
 
