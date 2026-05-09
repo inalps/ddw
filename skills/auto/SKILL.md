@@ -71,9 +71,21 @@ Create directories under `{workflowRoot}`:
 {workflowDir}/.ddw/logs/auto/{run-id}/smoke/
 ```
 
-If `--dry-run`: print to user once: `"DRY RUN — no files will be modified, no subagents will run."` All actions in step 5 are logged with a `[DRY RUN]` prefix instead of executed; subagents are not spawned.
+**Write the auto-run-active bypass marker.** This signals the `require-explicit-implementation-go` PreToolUse hook that per-task owner-go confirmation is suppressed for the duration of this orchestration — `auto.confirm_on` is the per-task gate at this level instead.
+
+```bash
+touch "{workflowDir}/.ddw/AUTO_RUN_ACTIVE"
+```
+
+The marker is removed in step 6.2 (Finalize). If the auto run crashes hard before step 6.2, a stale marker can linger; see step 4 for the safety check that mitigates it.
+
+If `--dry-run`: print to user once: `"DRY RUN — no files will be modified, no subagents will run."` All actions in step 5 are logged with a `[DRY RUN]` prefix instead of executed; subagents are not spawned. Also skip the AUTO_RUN_ACTIVE marker write — dry runs should not weaken the per-task gate.
 
 ## 4. Write run.json and initialize logs
+
+**Stale-AUTO_RUN_ACTIVE check.** Before assuming the marker we just wrote is the only one, scan for any pre-existing `awaiting-go-*.flag` markers in `{workflowDir}/.ddw/`. If any exist, those tasks were left mid-handoff by a previous (non-auto) sendit invocation. Decision rule:
+   - If the user explicitly told auto to pick up those tasks (their IDs appear in the `$ARGUMENTS` parsed in step 1), keep the markers — auto's autonomy gate will handle them per `auto.confirm_on`. The markers are removed when those tasks transition out of `in_progress`.
+   - If the markers reference tasks NOT mentioned in arguments, log to inbox under "Stuck" with reason `"awaiting-go marker present from prior session — owner intent unclear"` and skip those tasks for this run.
 
 Write `{workflowDir}/.ddw/logs/auto/{run-id}/run.json`:
 ```json
@@ -426,12 +438,19 @@ Continue back to step 5.1.
 
 If any subagents are still in flight when an exit condition fires (other than queue-empty), wait for them to finish. For each, run step 5.8 → 5.9.
 
-### 6.2 Update run.json
+### 6.2 Update run.json + remove auto-active marker
 
-Set:
+Set on `run.json`:
 - `ended_at`: current UTC datetime
 - `exit_reason`: the exit condition that fired
 - `counters`: final values
+
+Remove the bypass marker so the per-task owner-go gate is restored for the next non-auto session:
+```bash
+rm -f "{workflowDir}/.ddw/AUTO_RUN_ACTIVE"
+```
+
+This must run regardless of exit reason — even on hard errors. If the marker is left in place across sessions, the require-explicit-implementation-go hook becomes a no-op. (Re-running `/ddw:auto` would heal the state since step 6.2 always runs at the end of the new run; the worry is the gap *before* the next auto run.)
 
 ### 6.3 Write final inbox.md
 
