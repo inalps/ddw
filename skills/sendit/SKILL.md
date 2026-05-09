@@ -133,13 +133,6 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
       - Present and non-empty → append to Work Log: "Sendit gate: no test, justified — {reason}" and proceed to step 13.
       - Absent or empty → **BLOCK** with: "No companion test detected matching `{testFilePattern}`. Either (a) add a test, or (b) add `**No-Test-Justification:** <reason>` to the task file frontmatter, then re-run /ddw:sendit."
 
-13. **Auto-review** — when implementation and tests are complete, immediately run `/ddw:review` logic against this task. Do not wait for the user to trigger it. The owner should receive a fully reviewed task, not a half-finished handoff.
-
-14. **Queue tick** — if `/ddw:review` passed and the task is ready (all ACs green, owner review checklist complete):
-    - Set `**Status:** ready_for_integration` in the task file frontmatter. (This is the §13-authoritative write point — no other skill or script sets this status.)
-    - Append a `**Ready-At:** <ISO datetime>` field to the task frontmatter (after `**Date:**`). Use the actual current UTC datetime: `date -u +"%Y-%m-%dT%H:%M:%SZ"`. (This is the §13-authoritative write point for `ready_at` — no other skill or script writes this field.)
-    - Invoke `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root ${workflowRoot}` to advance the integration queue. If integration is idle, the task will be staged automatically.
-    - Print: "TASK-X queued for integration."
-    - If `/ddw:review` did not pass (open blockers remain), do NOT set `ready_for_integration` or call queue tick. Leave the task at its current status.
+13. **Auto-review** — when implementation and tests are complete, immediately run `/ddw:review` logic against this task. Do not wait for the user to trigger it. The owner should receive a fully reviewed task, not a half-finished handoff. After `/ddw:review` runs it sets `**Status:** review_and_bugfix` (or leaves the task at its current status if open blockers remain). The owner — or `/ddw:auto`'s advance-review row — flips `review_and_bugfix → done` once the review is clear, and `/ddw:close` handles rebase + merge. No queue tick, no integration staging.
 
 **Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

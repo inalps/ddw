@@ -1,6 +1,6 @@
 ---
 name: auto
-description: Overnight orchestrator. Loops through the DDW pipeline autonomously — implements, QA-checks, stages, and closes tasks without waiting for owner input. Logs everything; queues anything that needs a human call for the morning inbox.
+description: Overnight orchestrator. Loops through the DDW pipeline autonomously — implements, QA-checks, advances reviews, and closes tasks without waiting for owner input. Logs everything; queues anything that needs a human call for the morning inbox.
 disable-model-invocation: false
 ---
 
@@ -15,7 +15,6 @@ The owner has gone to bed. Your job: work through as many tasks as possible with
 ## What this won't do
 
 - Make architectural decisions. Decisions still in `proposed` stay that way — they go to the morning inbox.
-- Merge to `main`. Work stops at the integration worktree.
 - Reimplement any existing skill. You dispatch them via subagents using the Agent tool.
 
 ---
@@ -162,60 +161,54 @@ Read frontmatter / minimal sections only.
 - `**Spec-affecting:**` (if present)
 - `created_at` from filename or frontmatter
 - `ready_at` (if present)
-- Whether `## Implementation Summary` section is non-empty (post-implementation marker — Row 4)
+- Whether `## Implementation Summary` section is non-empty (post-implementation marker — Row 3)
 - Whether `## Review Log` contains a QA verdict line, and if so, the latest verdict (`CLEAR` / `BLOCKED`)
 - Whether `## Owner Review Checklist` contains any unchecked items (`- [ ]`)
 
 **Decisions:** glob `{workflowDir}/{paths.decisions}/DEC-*.md`. For each, parse `status:` and `id:` fields.
 
-**Integration state:** read `{workflowRoot}/{workflowDir}/.ddw/integration.json` if it exists; capture `testing` field.
-
 Build sets keyed by status. Exclude any task in `inflight_tasks`.
 
 ### 5.3 Pick the next action
 
-Walk the rows in order. Take the **first** row with a workable candidate. Within a row, pick the oldest by `created_at` (or `ready_at` for Row 2). Skip candidates already in `inflight_tasks`.
+Walk the rows in order. Take the **first** row with a workable candidate. Within a row, pick the oldest by `created_at`. Skip candidates already in `inflight_tasks`.
 
 **Row 1 — Auto-close** (requires `level == self-driving`)
 - Trigger: a task has `**Status:** done` and is not yet archived.
 - Action: pre-verify (step 5.5a), then dispatch `/ddw:close` subagent.
 
-**Row 2 — Auto-stage** (requires `level == self-driving`)
-- Trigger: a task has `**Status:** ready_for_integration` AND `{workflowDir}/.ddw/integration.json.testing` is empty/absent.
-- Action: stage + smoke directly (step 5.5b — no subagent).
-
-**Row 3 — Advance review** (requires `level == self-driving`)
+**Row 2 — Advance review** (requires `level == self-driving`)
 - Trigger: a task has `**Status:** review_and_bugfix` AND its Review Log shows the latest QA verdict is `CLEAR` AND running `commands.test` (if configured) succeeds.
-- Action: state flip directly (step 5.5c — no subagent).
+- Action: state flip directly (step 5.5b — no subagent).
 
-**Row 4 — QA**
+**Row 3 — QA**
 - Trigger: a task has `**Status:** in_progress`, its `## Implementation Summary` is non-empty, AND its Review Log has no QA verdict yet.
 - Cap: at most 1 QA subagent at a time (sequential).
 - Action: dispatch `/ddw:qa` subagent.
 
-**Row 5 — Sendit**
+**Row 4 — Sendit**
 - Trigger: a task has `**Status:** planned` AND the count of in-flight sendit subagents is `< config.maxConcurrent`.
 - Action: dispatch `/ddw:sendit` subagent.
 
-**Row 6 — Task creation** (requires `level == self-driving`)
+**Row 5 — Task creation** (requires `level == self-driving`)
 - Trigger: a decision has `status: decided` AND no task references it via `**Decision:** {DEC-id}`.
 - Cap: at most 1 task-creation subagent at a time.
 - Action: dispatch `/ddw:task` subagent with the DEC id pre-filled.
 
-**Row 7 — Proposed decisions** (always)
+**Row 6 — Proposed decisions** (always)
 - Trigger: a decision has `status: proposed` AND its id is not in `seen_proposed_decs`.
 - Action: append to `inbox_sections.decisions_pending`, add id to `seen_proposed_decs`. No dispatch.
 
-If no row applies after walking all seven, set exit reason "queue empty" and continue to step 5.1 (which will fire the exit if no in-flight subagents remain).
+If no row applies after walking all six, set exit reason "queue empty" and continue to step 5.1 (which will fire the exit if no in-flight subagents remain).
 
 ### 5.4 Autonomy gate
 
-Before any dispatch (rows 1, 4, 5, 6) or direct action (rows 2, 3), check whether the action triggers any item in `auto.confirm_on`.
+Before any dispatch (rows 1, 3, 4, 5) or direct action (row 2), check whether the action triggers any item in `auto.confirm_on`.
 
 **Detection (read the task file's `## Goal`, `## Scope`, `## Acceptance Criteria` and `## Files` sections — only these — for keywords):**
 
 - `destructive`: `migration`, `db:push`, `db:migrate`, `DROP TABLE`, `rm -rf`, `force-push`, `git reset --hard`, `secret rotation`, `delete user`, `truncate`, `purge`.
-- `architecture`: the task's linked decision is still `proposed` (defensive — should never happen at Row 5 since DEC must be `decided` for tasks to exist).
+- `architecture`: the task's linked decision is still `proposed` (defensive — should never happen at Row 4 since DEC must be `decided` for tasks to exist).
 - `external-side-effects`: `stripe`, `sendgrid`, `twilio`, `openai`, `anthropic`, `s3 upload`, `s3 delete`, `production`, `prod-`, real `email send`, `payment`, `charge`, `refund`. Suppress if any of these are also present: `dry_run`, `mock_`, `MOCK_EXTERNAL`, `test mode`, `staging`.
 
 If a keyword matches and the corresponding category is in `auto.confirm_on`:
@@ -234,16 +227,7 @@ Without a subagent:
 4. Run smoke (step 5.7). If smoke fails, log `"smoke red on close"` and continue.
 5. If all pass, proceed to step 5.6 (dispatch `/ddw:close`).
 
-### 5.5b Stage + smoke (Row 2 — direct, no subagent)
-
-1. Run: `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root {workflowRoot}`. This advances FIFO queue and writes the staged TASK id to `{workflowDir}/.ddw/integration.json.testing`. Capture stdout/stderr.
-2. If queue tick reported "nothing to stage", log `staging-noop` and continue loop (do NOT increment `tasks_dispatched`).
-3. Run: `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-stage --root {workflowRoot}`. (The stage script reads the testing field; no TASK id arg needed.)
-4. Run smoke (step 5.7).
-5. If smoke green: append to `inbox_sections.shipped` (subtype `staged`), log to tick.log: `staged+smoke-pass`. Increment `tasks_dispatched`. Reset `consecutive_errors`.
-6. If smoke red: run `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-unstage --root {workflowRoot}`, append to `inbox_sections.stuck` with reason `"smoke red after staging"`, log to tick.log. Increment `consecutive_errors` ONLY if this is the second smoke fail for the same task in this run; first fail is a soft skip with retry-on-next-iteration permitted.
-
-### 5.5c Advance review (Row 3 — direct, no subagent)
+### 5.5b Advance review (Row 2 — direct, no subagent)
 
 1. Read the task's full file once.
 2. Confirm latest QA verdict in Review Log is `CLEAR`. If not, abort (defensive — step 5.3 should have filtered).
@@ -265,7 +249,7 @@ Without a subagent:
 
 ### 5.6 Dispatch subagent
 
-For Row 1, 4, 5, or 6: spawn a subagent via the Agent tool.
+For Row 1, 3, 4, or 5: spawn a subagent via the Agent tool.
 
 **Before dispatching:** add the TASK or DEC id to `inflight_tasks`.
 
@@ -329,12 +313,12 @@ Return a one-line summary at the end of your output: "DONE | {result} | {1-line 
 | 5 | `sendit` | TASK id |
 | 6 | `task` | DEC id (subagent uses delegated mode — see `/ddw:task` skill) |
 
-For Row 6, append this extra paragraph to the prompt:
+For Row 5, append this extra paragraph to the prompt:
 ```
 You are running /ddw:task in DELEGATED mode. Read the decision file {DEC-id} at {workflowDir}/decisions/{DEC-id}.md and use its body to fill in title/goal/scope/non-goals automatically. Skip the AskUserQuestion step (step 4) entirely. If the decision body is too sparse to extract those fields confidently, return result=stopped-for-human with reason "DEC body too sparse for delegated task creation".
 ```
 
-### 5.7 Smoke check (called from 5.5a, 5.5b)
+### 5.7 Smoke check (called from 5.5a)
 
 If `smoke.command` is null/absent: return `pass = true` immediately, write a smoke result file with `script_smoke: "skipped"`.
 
@@ -393,7 +377,7 @@ After the Agent tool returns (success, error, or timeout):
 
 | Subagent result | Status check | Outcome |
 |---|---|---|
-| `success` | matches expected post-skill state (e.g., sendit → `ready_for_integration` or `in_progress`+impl, qa → review_and_bugfix or in_progress, close → `closed`/archived) | `shipped` |
+| `success` | matches expected post-skill state (e.g., sendit → `review_and_bugfix` or `in_progress`+impl, qa → review_and_bugfix or in_progress, close → `closed`/archived) | `shipped` |
 | `success` | unchanged or unexpected | `hard_error` (skill claimed success but didn't move state) |
 | `blocked` | any | `blocked` |
 | `stopped-for-human` | any | `blocked` |
@@ -412,9 +396,9 @@ After the Agent tool returns (success, error, or timeout):
 - `counters.blocked += 1`
 - `counters.consecutive_errors = 0`  (blocker is informative, not a system failure)
 - `counters.tasks_dispatched += 1`
-- **QA-block retry rule (Row 4 only):**
+- **QA-block retry rule (Row 3 only):**
   - Increment `qa_block_count[id]`.
-  - If `qa_block_count[id] == 1`: re-dispatch as Row 5 (sendit) with the QA findings appended to the subagent prompt under a `## QA Findings From Previous Pass` header. Do NOT log to inbox yet — give the dev one shot to fix.
+  - If `qa_block_count[id] == 1`: re-dispatch as Row 4 (sendit) with the QA findings appended to the subagent prompt under a `## QA Findings From Previous Pass` header. Do NOT log to inbox yet — give the dev one shot to fix.
   - If `qa_block_count[id] >= 2`: log to `inbox_sections.stuck` with reason `"QA failed twice"`, link to both report files.
 - For other rows: append to `inbox_sections.stuck` with the reason from the report.
 - Append to tick.log: `{timestamp} | {action} | {id} | blocked | {reason}`.
@@ -523,7 +507,7 @@ If any of these arise, log to inbox and move on. Never block on a prompt:
 - Smoke red after one retry on the same task in this run
 - Subagent exceeded `subagentTimeoutMinutes`
 - Subagent report file missing → hard error
-- `commands.test` red on a Row 1 or Row 3 verification
+- `commands.test` red on a Row 1 or Row 2 verification
 
 ## Reference: Frontmatter writes
 
@@ -535,7 +519,7 @@ This skill writes to:
 - `{workflowDir}/.ddw/logs/auto/{run-id}/smoke/{id}.json` (sole writer)
 - `{workflowDir}/.ddw/inbox/latest.md` (symlink)
 
-**Direct task-file writes (Row 3 only):**
+**Direct task-file writes (Row 2 only):**
 - `**Status:**` flip from `review_and_bugfix` → `done` (self-driving level only)
 - `## Owner Review Checklist` auto-tick + marker line
 - `## Work Log` append

@@ -22,7 +22,6 @@
   },
   "worktree": {
     "taskDir": ".worktrees/{TASK_NAME}",
-    "integrationDir": ".worktrees/integration",
     "syncFiles": [".env", ".env.local"],
     "maxConcurrent": 3
   },
@@ -40,5 +39,8 @@
     "subagentTimeoutMinutes": 20,
     "consecutiveErrorLimit": 3,
     "confirm_on": ["destructive", "architecture", "external-side-effects"]
+  },
+  "merge": {
+    "mode": "local"
   }
 }

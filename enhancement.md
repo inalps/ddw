@@ -1176,3 +1176,134 @@ Phase A is most of the value on its own: ten tasks ship overnight, you wake up t
 - **Auto-decide architecture.** Defeats the whole point of DDW. Decisions stay yours.
 - **Auto-merge to main.** Last step is always a human.
 - **Slack or email notifications.** Out of scope. The morning summary file is enough. Add later if it isn't.
+
+---
+
+## 15. Trunk-based merge — drop integration staging
+
+**Status:** done (commit 9c52492 — 2026-05-09; surfaced from gearscrape end-to-end run)
+
+The integration-staging machinery (`worktree.integrationDir`, `ddw-stage`, `ddw-unstage`, `ddw-queue`, `ready_for_integration` status, auto Row 2 auto-stage) is overengineered for the realistic DDW user profile and adds maintenance surface that produced ~5 bugs in a single overnight run (none of which were the user's fault).
+
+### What we ran tonight that exposed the problem
+
+A real overnight `/ddw:auto` run on a project with `smoke.command: null`. Five tasks, four success-shipped, one autonomy-blocked. Issues encountered:
+
+1. `setup-worktree.sh` had the same `ddw.json` discovery bug as queue scripts — silently fell back to plain branch checkout for every task. Fixed.
+2. `ddw-queue tick` failed with "integration worktree not found" because no skill bootstrapped `.worktrees/integration` automatically.
+3. The `require-active-task` hook blocks writes to `.worktrees/<task-id>/` because `DDW_PROJECT_DIR` resolves to the main repo and the worktree's task-status flip is invisible to it.
+4. The queue script reads task status from main's working tree, which is stale until merge — making the staging flow effectively useless until you merge first (defeating the point).
+5. After successful staging + smoke green, there's no defined transition from `staged` to `done`. Owner has to flip manually.
+6. `.env.ddw` (per-worktree PORT_OFFSET) and `.worktrees/` were not gitignored in the project's gitignore. Both leaked into commits.
+
+Most of these are bugs in the staging story itself, not in the per-task worktree concept. Per-task worktrees worked fine once the discovery fix landed.
+
+### The simpler model
+
+Adopt **trunk-based development with rebase-and-merge** (the prevailing pattern at Google, Meta, Stripe, Vercel, Linear, and most modern startups). The orchestrator becomes the merge sequencer:
+
+```
+sendit → review_and_bugfix → review CLEAR → done
+close →
+  rebase task branch onto base (origin/base if remote, else local)
+  re-run tests in worktree (alignment-after-rebase guard)
+  → if local mode: merge --no-ff into base → smoke if configured → revert if smoke red → archive
+  → if pr mode:    print 2 manual commands (git push + gh pr create) and stop.
+                   Owner runs them via their preferred tooling (gh, IDE, GitHub Desktop, shell alias).
+                   Re-run /ddw:close after PR merges → close detects task branch is in base → archive.
+```
+
+Per-task worktrees stay (they're the parallelism + isolation story, distinct from integration staging).
+
+### Configuration — one knob
+
+```json
+"merge": { "mode": "local" }   // or "pr". Default "local".
+```
+
+That's it. No `baseBranch` (default to `main`, override via gitconfig), no `rebaseBeforeMerge` (always rebase — when would you not?), no `smokeAfterMerge` (`smoke.command`'s null-check already covers this), no `squash` flag (solo: `--no-ff`; PR: GitHub button decides), no `tool` flag (gh CLI hardcoded; ~95% of users; YAGNI for glab/tea), no `auto_merge` flag (set on the GitHub repo, not in DDW), no `draft`/`labels`/`reviewers` (every team has conventions; encoding them in `ddw.json` becomes a maintenance burden — let teams wrap close in their own shell function).
+
+### Status semantics — no new states
+
+Keep the existing pipeline: `planned → in_progress → review_and_bugfix → done → archived`. **No new states for PR mode.**
+
+In PR mode, `done` just means "ready to ship via PR." The task file stays in `tasks/` (not `tasks/archive/`) until the PR merges. Archival is delayed, not state-machine-augmented. The PR URL lives in task frontmatter:
+
+```
+**PR:** https://github.com/owner/repo/pull/123
+```
+
+### No new directories, no new skills
+
+- No `tasks/in_review/`. Use existing `tasks/` for "done with PR pending."
+- No `ddw:check-prs` skill. The `auto` skill's pipeline scan adds ~10 lines to: for each task with `Status: done` + `**PR:**` URL, run `gh pr view <url> --json mergedAt`. If merged → archive + delete branch. If not → leave alone.
+
+### Auto skill behavior per mode
+
+| Mode | Auto behavior |
+|---|---|
+| `local` | Full pipeline, runs to queue empty. Each `done` task is closed (rebase + merge) before next dispatches. |
+| `pr` | sendit → review → close (rebase + test, then print push + `gh pr create` instructions). Stops there. Owner pushes/PRs manually. Re-running `/ddw:close` after PR merges archives the task. No `gh pr view` polling — by design (see "What's NOT in this design" below). |
+
+### What gets deleted from the plugin
+
+- `worktree.integrationDir` config key
+- `.ddw/integration.json` (integration state file)
+- `scripts/ddw-stage`, `scripts/ddw-unstage`, `scripts/ddw-queue`, `scripts/ddw-integration-status`, `scripts/ddw-integration-reset`
+- `skills/integration/`, `skills/queue/`
+- `auto` skill Row 2 (auto-stage) and the `staged` shipped subtype
+- `sendit` skill step 14's `ready_for_integration` status flip and queue tick
+- `close` skill step 13d's integration.json clear (replaced by the new step 13 Merge)
+
+### What gets added (small, additive)
+
+- `merge.mode` config key (one line in `ddw.json.example`)
+- `close` skill: rebase + merge in local mode; rebase + push + record PR URL in PR mode (~30 lines added; ~50 lines deleted from the dropped integration handlers)
+- (no auto-skill changes for PR mode — see "What's NOT in this design" below)
+
+Net (actual): ~940 lines deleted, ~232 added. Plugin shrinks ~700 lines.
+
+### What's NOT in this design (and why)
+
+The first draft of this proposal had a "Phase B" for full PR automation: close runs `git push` + `gh pr create` for the user, stores the PR URL, and an `auto`-time poll of `gh pr view` archives the task when GitHub reports merged.
+
+Cut. Reasons:
+
+- It saves the user **two commands per task** (push + pr-create) at the cost of ~30 lines of code + maintenance forever (gh CLI auth, error handling, tooling skew when teams use Graphite/Sapling/`hub`/IDE pickers).
+- Most modern teams already have IDE / shell-alias / GitHub-Desktop helpers for opening PRs. DDW doing it too is the 6th tool fighting the other 5.
+- The poll-and-archive loop adds an `auto`-skill responsibility that runs on every invocation, even for solo projects that never set `merge.mode: "pr"`.
+- The current PR-mode (print 2 commands, stop, archive on re-run) is **already a working PR mode**. It's not pretty, but it works and stays out of teams' way.
+
+If a real team-mode user shows up and asks "make this automatic," the change is local: ~30 lines in `close`, no new state. Add it then. Until then, no Phase B. The plan is the plan.
+
+### Rejected ideas (the slop the first draft had)
+
+The first iteration of this proposal had **11 config keys** (`baseBranch`, `rebaseBeforeMerge`, `smokeAfterMerge`, `squash`, `auto_merge`, `draft`, `labels`, `reviewers`, `team_reviewers`, `tool`, `delete_branch_after_merge`), **2 new status states** (`pr_open`, `merged`), **1 new directory** (`tasks/in_review/`), and **1 new skill** (`ddw:check-prs`). Hard-thinking review cut it to **1 config key, 0 new states, 0 new directories, 0 new skills.**
+
+What got rejected and why:
+
+- **`tool: "gh" | "glab"` abstraction**: ~95% of DDW users are on GitHub. No GitLab user has asked. Hardcode `gh`, add `glab` in 20 lines if/when someone needs it. Designing the abstraction now is speculation.
+- **`auto_merge: true/false`**: GitHub's repo settings or `gh pr merge --auto` already cover this. DDW doesn't need a parallel switch.
+- **`labels`, `reviewers`, `team_reviewers`**: Every team has conventions, those conventions change as people join/leave. Encoding them in `ddw.json` becomes a maintenance burden. Let teams wrap `close` in a shell alias.
+- **`draft: true/false`**: Niche. Default false is fine; if needed, owner can `gh pr ready` after the fact.
+- **`squash: true/false`**: Local mode uses `--no-ff` (clean history). PR mode: GitHub's "Squash and merge" button decides, not gh CLI. The flag was meaningless.
+- **`rebaseBeforeMerge: true/false`**: When would anyone not rebase before merge? Never. Drop the flag, always rebase.
+- **`smokeAfterMerge: true/false`**: `smoke.command: null` already disables smoke. A second flag duplicates.
+- **`baseBranch`**: Defaults to `main`. Override path via git config (`init.defaultBranch`) or future `merge.baseBranch` if a real user shows up with a non-main convention. Today: hardcode.
+- **New status states `pr_open`, `merged`**: Adds forks in every skill that touches state. Not necessary — `done` already means "implementation complete; archival pending merge confirmation." PR-merge transition is data-driven (poll `gh pr view`), not state-machine-driven.
+- **`tasks/in_review/` directory**: The task is `done`, just not yet archived. Same directory it was in. Don't introduce new locations to encode "waiting" — the data (PR URL + merge status) is enough.
+- **`ddw:check-prs` skill**: Polling logic is 10 lines inside `auto`'s pipeline scan. Doesn't need its own skill, doesn't need its own invocation.
+
+The simplicity test for any DDW config key: **"would anyone realistically set this to the non-default value?"** If the honest answer is "maybe one team in 50," cut it.
+
+### Frontmatter & schema changes
+
+One optional addition in PR mode: `**PR:** <url>` line in task frontmatter, written by `close` after `gh pr create` succeeds. Ignored in local mode.
+
+No changes to DEC, PRD, or `ddw.json` schema beyond `merge.mode`.
+
+### Status
+
+Shipped 2026-05-09 in plugin commit `9c52492`. Net diff: +232 / −940 lines. The plugin is ~700 lines smaller. Pipeline simplifies to `planned → in_progress → review_and_bugfix → done → archived`. No new states. No new directories. No new skills. One config key (`merge.mode`).
+
+Local mode is fully automated end-to-end. PR mode prints two manual commands and stops, with archive-on-re-run handling the rest. There is no follow-on phase.

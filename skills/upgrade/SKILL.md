@@ -70,6 +70,21 @@ Check:
 
 Check that `${workflowRoot}/.gitignore` includes a pattern matching `${workflowDir}/.ddw/`. If absent → mark MISSING.
 
+### 2.9 — Integration staging removal
+
+Older DDW versions had `worktree.integrationDir` in `ddw.json` and `.ddw/integration.json` runtime state for the integration-staging worktree. Phase A drops this entirely.
+
+Check:
+- If `ddw.json` contains a `worktree.integrationDir` key → mark NEEDS-CLEANUP.
+- If `${workflowRoot}/.ddw/integration.json` exists OR `${workflowRoot}/${workflowDir}/.ddw/integration.json` exists → mark NEEDS-CLEANUP.
+- If `${workflowRoot}/.worktrees/integration/` exists → mark NEEDS-CLEANUP-MANUAL (worktree removal is destructive; surface to owner, don't auto-remove).
+
+### 2.10 — `merge.mode` config
+
+Phase A added `merge.mode` config key. Default `"local"`.
+
+Check: if `merge` block is absent from `ddw.json` → mark MISSING.
+
 ---
 
 ## Step 3 — Present Upgrade Report
@@ -162,6 +177,18 @@ If Step 2.8 reported MISSING:
 - If `.gitignore` doesn't exist, create it with just this block.
 - Never reorder or remove existing lines.
 - Do not touch any other content in CLAUDE.md
+
+### 4.9 — Remove integration staging artifacts
+
+If Step 2.9 reported NEEDS-CLEANUP:
+- Delete `worktree.integrationDir` key from `ddw.json` (preserve other worktree fields).
+- Delete `${workflowRoot}/.ddw/integration.json` and `${workflowRoot}/${workflowDir}/.ddw/integration.json` if they exist.
+- For NEEDS-CLEANUP-MANUAL (`.worktrees/integration/`): tell owner: "Found `.worktrees/integration/` — Phase A removed integration staging. Run `git worktree remove .worktrees/integration` to clean up when convenient."
+
+### 4.10 — Add `merge.mode`
+
+If Step 2.10 reported MISSING:
+- Add `"merge": { "mode": "local" }` to `ddw.json`. Place after the `auto` block for ordering consistency with `templates/ddw.json.example`.
 
 ---
 

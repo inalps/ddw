@@ -109,20 +109,56 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
      - If unmarked (no disposition) → surface to the owner: "This constraint was proposed in {DEC-id} but never resolved: {constraint}. Add, reject, or defer?" Update the decision file with the owner's choice.
    - If no decision is linked, or no constraints were proposed, skip this step.
 
-13. **Archive** — move the completed task file:
+13. **Merge** (trunk-based: rebase task branch onto main, run tests, merge):
+
+    Read `merge.mode` from `ddw.json` (default `"local"`).
+
+    **Common pre-merge** (both modes):
+    a. Resolve task branch: `task/{task-id}`.
+    b. Resolve worktree path from `ddw.json.worktree.taskDir` if configured (substitute `{TASK_NAME}` → task id). If no worktree exists, the task is on a plain branch in the main repo — switch to working in the main repo for steps below.
+    c. Determine base branch: `main` (override later if `merge.baseBranch` is added).
+
+    ### 13.A — Local mode (`merge.mode: "local"`)
+
+    1. **Fetch latest base** if a remote exists: `git fetch origin {base}` (best-effort; warn but continue if no remote).
+    2. **Rebase task branch onto base.** In the worktree (or main repo for plain-branch fallback): `git -C <worktree> rebase {base}`.
+       - If conflicts: stop. Report the conflicting paths to the owner. Do NOT archive. Status stays `done`. Owner resolves manually, re-runs `/ddw:close`.
+    3. **Re-run tests in the worktree** (post-rebase guard) if `commands.test` is configured: `bash -c "<commands.test>"` from the worktree path.
+       - If tests red: stop. Report failing tests. Do NOT archive. Owner fixes and re-runs `/ddw:close`.
+    4. **Merge into base** (in main repo, NOT worktree):
+       - `git checkout {base}` (in workflowRoot)
+       - `git merge --no-ff task/{task-id} -m "Merge: {task-title} (TASK-{date}-{title})"`
+       - Capture merge commit SHA.
+    5. **Run smoke on base** if `smoke.command` is configured. Same logic as auto skill's pre-close smoke (step 5.5a).
+       - If smoke red:
+         - `git revert HEAD --no-edit` (revert the merge commit)
+         - Report to owner: "Smoke red after merge of TASK-{id}; reverted (revert commit: <sha>). Task NOT archived. Investigate and re-run `/ddw:close` once fixed."
+         - Do NOT archive. Status stays `done`.
+     - If smoke green (or smoke not configured): proceed to step 14 (Archive).
+    6. Print: "Merged TASK-{id} into {base}. Merge commit: <sha>. Smoke: <green | skipped | red+reverted>."
+
+    ### 13.B — PR mode (`merge.mode: "pr"`) — Phase B (deferred)
+
+    Phase B implementation pending. For now in `pr` mode:
+    - Print: "merge.mode: pr — Phase B not yet implemented in plugin. Push the task branch and create the PR manually:
+      ```
+      git push -u origin task/{task-id}
+      gh pr create --base {base} --head task/{task-id}
+      ```
+      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive."
+    - Do NOT archive yet. Status stays `done`.
+    - Stop the close skill here (skip steps 14–15.5).
+
+14. **Archive** (only reached in local mode after a clean merge, OR in PR mode after a re-run that detects the task branch is already in base):
     a. Move `{workflowDir}/tasks/TASK-{date}-{title}.md` to `{workflowDir}/tasks/archive/`
     b. Check if the linked decision has any remaining non-archived tasks:
        - Scan `{workflowDir}/tasks/TASK-*.md` (non-archive) for files where `**Decision:**` matches this task's decision
        - If none remain: move the decision file to `{workflowDir}/decisions/archive/`
        - **Do NOT auto-move PRDs.** PRD closure is the owner's call via `/ddw:prd close` (§13 authority matrix). If the just-archived decision references a PRD that is not yet closed, REMIND the owner: "DEC-{id} archived. PRD-{id} is still active — run `/ddw:prd close PRD-{id}` if all relevant decisions exist."
     c. Logs are derived views — `ddw-index` regenerates them on demand. Skip inline sync.
-    d. **Queue tick** — after archival:
-       - If the closing task's status was `ready_for_integration` (queued but not yet staged) or `testing-complete` (came through staging): check `{workflowDir}/.ddw/integration.json`. If `testing` matches this task's ID, clear it by writing `{"testing": null}` to `{workflowDir}/.ddw/integration.json`. (This handles `/ddw:close` running on the currently-testing task.)
-       - Invoke `bash ${CLAUDE_PLUGIN_DIR}/scripts/ddw-queue tick --root ${workflowRoot}`. The tick advances the queue: if the integration worktree is now idle and another task is ready, the next head will be staged.
-       - Print the result: "Queue advanced. Next staged: TASK-Y." or "Queue empty." (the ddw-queue tick output will indicate which).
 
-13.5. **Milestone phase completion** — check if archiving this decision completed a milestone:
-   - Only run this step if a decision was archived in step 13b.
+14.5. **Milestone phase completion** — check if archiving this decision completed a milestone:
+   - Only run this step if a decision was archived in step 14b.
    - Read `{workflowDir}/MILESTONES.md`.
    - Find the `##` section that lists the just-archived decision ID (e.g., `DEC-20260406-auth-redesign`).
    - If the section heading already has `✅`, skip (already marked complete).
@@ -132,15 +168,15 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
    - Report: "Milestone '{name}' is now complete — all decisions archived."
    - If some decisions are NOT archived → report progress: "Milestone '{name}': {done}/{total} decisions complete."
 
-14. **Worktree cleanup** (git only — skip if not a git repo or no `worktree.taskDir` configured):
+15. **Worktree cleanup + branch deletion** (git only — skip if not a git repo or no `worktree.taskDir` configured):
     - Resolve the task's worktree path from `ddw.json.worktree.taskDir` substituted with the task ID.
     - If the directory exists AND has no uncommitted changes (`git -C <worktreePath> status --porcelain` is empty):
-      - Run `git -C ${workflowRoot} worktree remove <worktreePath>` to detach the worktree.
+      - Run `git worktree remove <worktreePath>` from `{workflowRoot}`.
       - Print: "Worktree `.worktrees/{task-id}/` removed."
-    - If the directory has uncommitted WIP, do NOT remove. Tell the user: "Worktree `.worktrees/{task-id}/` has uncommitted changes — leaving it for you to inspect. Run `git worktree remove --force <path>` once safe." This protects accidental loss of work-in-progress.
-
-15. **Merge guidance** (git only — skip if not a git repo):
-    Remind the user: "Task archived. To merge your work: create a PR or `git checkout main && git merge {branch}`."
+    - If the directory has uncommitted WIP, do NOT remove. Tell the user: "Worktree `.worktrees/{task-id}/` has uncommitted changes — leaving it for you to inspect. Run `git worktree remove --force <path>` once safe."
+    - **Delete the merged task branch** (only in local mode, only after step 13 merge succeeded):
+      - `git branch -d task/{task-id}` (in workflowRoot). The branch is fully merged into base, so `-d` (not `-D`) is the safe move.
+      - If branch deletion fails (rare — non-fast-forward state), warn but don't block.
 
 16. **Report** a checklist confirming each item was completed or explicitly skipped with reason:
     - [ ] Task file status + Work Log
@@ -150,8 +186,10 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     - [ ] DECISION_LOG + decision file (updated / N/A)
     - [ ] Retrospective (logged / skipped)
     - [ ] Proposed constraints (all resolved / N/A)
-    - [ ] Archived (task / task + decision)
+    - [ ] Merge (local: <sha> | pr: pushed/awaiting | skipped — reason)
+    - [ ] Smoke after merge (green / red+reverted / skipped — reason)
+    - [ ] Archived (task / task + decision / not yet — reason)
     - [ ] Worktree cleanup (removed / kept — reason)
-    - [ ] Queue tick (advanced / empty)
+    - [ ] Branch deletion (deleted / kept — reason)
 
 **Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.
