@@ -17,6 +17,18 @@ The owner has gone to bed. Your job: work through as many tasks as possible with
 - Make architectural decisions. Decisions still in `proposed` stay that way — they go to the morning inbox.
 - Reimplement any existing skill. You dispatch them via subagents using the Agent tool.
 
+## Prerequisite: bypass permissions for overnight runs
+
+Subagents running overnight will block indefinitely if they hit a Claude Code permission prompt with no one watching. The only safe approach for a truly unattended run is to start Claude Code with:
+
+```
+claude --dangerouslySkipPermissions
+```
+
+This bypasses all tool-use permission prompts for the session. Without it, any tool call outside your pre-approved list will silently stall — there is no timeout and no fallback.
+
+Destructive or external-side-effect operations are still handled by the autonomy gate (step 5.4) at the skill level — those are logged to inbox and skipped before any tool is called, regardless of permission mode.
+
 ---
 
 ## 0. Read voice
@@ -268,6 +280,7 @@ For Row 1, 3, 4, or 5: spawn a subagent via the Agent tool.
 **Use the Agent tool with:**
 - `description`: `"DDW auto: {skill-name} for {id}"` (under 50 chars)
 - `subagent_type`: `"general-purpose"`
+- `model`: see dispatch table below
 - `prompt`: build using the template below
 
 **Subagent prompt template:**
@@ -316,14 +329,16 @@ final_status: {the final **Status:** value of the task file, or "n/a"}
 Return a one-line summary at the end of your output: "DONE | {result} | {1-line note}".
 ```
 
-**Substitute `{ddw-skill-name}` and `{id}`:**
+**Substitute `{ddw-skill-name}`, `{id}`, and `{model}`:**
 
-| Row | ddw-skill-name | id source |
-|---|---|---|
-| 1 | `close` | TASK id |
-| 4 | `qa` | TASK id |
-| 5 | `sendit` | TASK id |
-| 6 | `task` | DEC id (subagent uses delegated mode — see `/ddw:task` skill) |
+Read the agent profile from `${CLAUDE_PLUGIN_DIR}/agents/{agent}.md` and extract the `model:` frontmatter field to set `{model}`. Map rows to agent profiles:
+
+| Row | ddw-skill-name | id source | agent profile | model |
+|---|---|---|---|---|
+| 1 | `close` | TASK id | _(none)_ | `sonnet` |
+| 3 | `qa` | TASK id | `qa.md` | `sonnet` |
+| 4 | `sendit` | TASK id | `developer.md` | `sonnet` |
+| 5 | `task` | DEC id (subagent uses delegated mode — see `/ddw:task` skill) | _(none)_ | `sonnet` |
 
 For Row 5, append this extra paragraph to the prompt:
 ```

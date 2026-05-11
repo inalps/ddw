@@ -65,14 +65,6 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
      Status → in_progress. Sending it! (Owner: {resolved identity})
      ```
 
-7.4. **Write the awaiting-go marker.** Pairs with the `require-explicit-implementation-go` PreToolUse hook to close the ambiguous-affirmation gap (an out-of-context "do it" / "go" / "yes" from a turn with multiple proposals on the table should NOT authorize implementation by itself). Run via Bash (NOT Write) so the marker write does not trigger the hook it's setting up:
-   ```bash
-   mkdir -p "{workflowDir}/.ddw" && touch "{workflowDir}/.ddw/awaiting-go-{task-id}.flag"
-   ```
-   Skip this step entirely when running under `/ddw:auto` — the orchestrator's `AUTO_RUN_ACTIVE` marker bypasses this gate by design (auto's own `auto.confirm_on` autonomy gate is the per-task check at that level).
-
-   The marker is cleared automatically by `clear-awaiting-go.sh` (UserPromptSubmit) when the owner either (a) sends an unambiguous affirmative AND there is exactly one task awaiting, or (b) names the task ID/slug in their message. Multiple markers + bare affirmative = remains blocked, the owner must disambiguate.
-
 7.5. **Set up task worktree** (git only — skip if not a git repo):
    - Check: `git rev-parse --git-dir 2>/dev/null`. If not a git repo, skip this step.
    - Branch name: `task/{task-id}` (e.g., `task/TASK-20260331-auth-middleware`)
@@ -103,16 +95,11 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
     Chalk up, no looking down — let's climb.
     ```
 
-11. **Begin implementation** — start working on the task scope.
+11. **Begin implementation** — start working on the task scope. `/ddw:sendit` itself is the explicit go signal; do not pause for an additional owner confirmation.
 
-    **Gate behavior (when not running under `/ddw:auto`).** The first Edit/Write call will be blocked by the `require-explicit-implementation-go` PreToolUse hook, because step 7.4 wrote the awaiting-go marker. This is by design: the gate ensures the owner has *explicitly* authorized starting THIS task in the current session — not via a re-interpreted affirmation from an earlier turn.
+    **Multi-file work → dispatch to a subagent.** If the task touches more than ~2 files of code (mechanical refactors, ports, cross-file fanouts), the **first** action after the send-it message is to spawn a subagent with the task ID, the worktree path, and a tight pointer to the task file. Pass enough context that the subagent can read scope/AC/files for itself. Use `model: "sonnet"` (from `agents/developer.md`) when invoking the Agent tool. Main thread keeps: monitoring the subagent, course-correcting on owner feedback, running the auto-review at step 13.
 
-    On the first block:
-    1. Stop. Do NOT retry the edit.
-    2. Print a short plan summary to the user: Goal in one sentence + the 3–5 concrete files/areas you intend to touch + any risks or open questions you want to flag before going.
-    3. Wait for the owner's reply. Authorization clears the marker automatically (see step 7.4); after that, edits proceed normally.
-
-    **Gate behavior (under `/ddw:auto`).** Step 7.4 is skipped, no marker exists, the hook passes through, and implementation proceeds without owner-confirm — as intended for autonomous overnight runs (the `auto.confirm_on` policy is the equivalent gate at that level).
+    Single-file or one-shot edits can stay in the main thread.
 
 12. **Write tests** — after implementation, before review:
     - Write **unit tests** for every new or changed function — verify individual logic in isolation.

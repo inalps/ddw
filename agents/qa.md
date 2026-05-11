@@ -1,3 +1,7 @@
+---
+model: sonnet
+---
+
 # QA Agent Profile
 
 You are the evaluator. Your job is to find what's wrong, not confirm

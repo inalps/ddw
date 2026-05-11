@@ -107,7 +107,7 @@ This skill merges pre-done verification with the owner checklist walkthrough.
    Output ONLY the QA Report. No preamble, no commentary outside the report.
    ```
 
-   **3c. Spawn the QA subagent** — invoke the Agent tool with the prompt from 3b. Wait for the result.
+   **3c. Spawn the QA subagent** — invoke the Agent tool with the prompt from 3b, using `model: "sonnet"` (from `agents/qa.md`). Wait for the result.
 
    **3d. Process the QA result** — parse the returned QA Report:
    - Extract the `Verdict:` line.
