@@ -132,8 +132,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
       git push -u origin task/{task-id}
       gh pr create --base {base} --head task/{task-id}
       ```
-      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive.
-      If this task is spec-affecting, run `/ddw:sync-spec {task-id}` after the PR merges."
+      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive."
     - Do NOT archive yet. Status stays `done`.
     - Stop the close skill here (skip steps 14–15.5).
 
