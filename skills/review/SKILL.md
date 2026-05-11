@@ -12,6 +12,8 @@ This skill merges pre-done verification with the owner checklist walkthrough.
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `commands.test`, and `specPath`.
 
+1.3. **Detect auto mode** — check if `{workflowDir}/.ddw/AUTO_RUN_ACTIVE` exists. If yes, set `auto_mode = true`. In auto mode the owner checklist walkthrough (steps 7–9) is skipped — `/ddw:auto` Row 2 handles checklist advancement and the `done` transition. ALL CLEAR in auto mode = QA CLEAR + tests pass.
+
 1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh.
 
 2. **Read the task file** at `{workflowDir}/tasks/TASK-{date}-{title}.md`.
@@ -135,7 +137,9 @@ This skill merges pre-done verification with the owner checklist walkthrough.
    - Report pass/fail and test count.
    - If failing: list the failing tests and stop — do not proceed.
 
-7. **Owner Review Checklist** — locate the `## Owner Review Checklist` section:
+7. **Owner Review Checklist** — if `auto_mode` is true: skip steps 7–9 entirely. Proceed to step 10.
+
+   Otherwise (human mode): locate the `## Owner Review Checklist` section:
    - Parse all unchecked items.
    - **Pre-check automated items silently**: run tests, read code for spot-checks, note results.
    - **Present ALL unchecked items at once** in a single response:
@@ -145,9 +149,9 @@ This skill merges pre-done verification with the owner checklist walkthrough.
      - For manual items: give concrete specific advice — what to open, what to check, what to expect.
      - End with: "Reply with the numbers of items that **passed** (e.g. `1 3 4`), or `all` / `none`. Type `skip N` to skip an item without failing it."
 
-8. **Wait for one reply from the user.**
+8. **Wait for one reply from the user.** (human mode only — skipped in auto mode)
 
-9. **Process the reply:**
+9. **Process the reply:** (human mode only — skipped in auto mode)
    - Auto-passed items are ticked regardless.
    - Items the user listed as passed → tick `[x]`.
    - Items listed as `skip N` → leave `[ ]`.
@@ -156,6 +160,7 @@ This skill merges pre-done verification with the owner checklist walkthrough.
 
 10. **Summary** — output a table: each item with status ✅ passed / ❌ failed / ⏭ skipped / ⬜ not reached.
     - Overall verdict: ALL CLEAR or INCOMPLETE (with blockers).
+    - In auto mode: verdict is ALL CLEAR if QA CLEAR + tests pass. Checklist deferred to `/ddw:auto` Row 2.
 
 11. **If ALL CLEAR**:
     - Set task status to `review_and_bugfix` in the task file.
@@ -165,12 +170,12 @@ This skill merges pre-done verification with the owner checklist walkthrough.
       Verdict: ALL CLEAR
       QA: {pass}/{total} AC pass, {invariant pass}/{invariant total} INV pass
       Tests: {pass count} pass, {fail count} fail
-      Checklist: {checked}/{total} items passed
+      Checklist: {auto mode: deferred to /ddw:auto Row 2 | human mode: {checked}/{total} items passed}
       ```
     - Append a Work Log entry:
       ```
       ### {actual UTC datetime}
-      Status → review_and_bugfix. {test results if applicable}. Manual verification pending.
+      Status → review_and_bugfix. {test results if applicable}. {auto mode: checklist deferred | human mode: manual verification pending}.
       ```
 
 12. **If INCOMPLETE**: list what blocks and what needs to be fixed before re-running review.

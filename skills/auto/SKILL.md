@@ -205,10 +205,10 @@ Walk the rows in order. Take the **first** row with a workable candidate. Within
 - Trigger: a task has `**Status:** review_and_bugfix` AND its Review Log shows the latest QA verdict is `CLEAR` AND running `commands.test` (if configured) succeeds.
 - Action: state flip directly (step 5.5b — no subagent).
 
-**Row 3 — QA**
+**Row 3 — Review**
 - Trigger: a task has `**Status:** in_progress`, its `## Implementation Summary` is non-empty, AND its Review Log has no QA verdict yet.
-- Cap: at most 1 QA subagent at a time (sequential).
-- Action: dispatch `/ddw:qa` subagent.
+- Cap: at most 1 review subagent at a time (sequential).
+- Action: dispatch `/ddw:review` subagent. Review detects `AUTO_RUN_ACTIVE`, skips owner checklist, sets `review_and_bugfix` if QA CLEAR + tests pass. Row 2 then advances it to `done`.
 
 **Row 4 — Sendit**
 - Trigger: a task has `**Status:** planned` AND the count of in-flight sendit subagents is `< config.maxConcurrent`.
@@ -404,7 +404,7 @@ After the Agent tool returns (success, error, or timeout):
 
 | Subagent result | Status check | Outcome |
 |---|---|---|
-| `success` | matches expected post-skill state (e.g., sendit → `review_and_bugfix` or `in_progress`+impl, qa → review_and_bugfix or in_progress, close → task file in `tasks/archive/`) | `shipped` |
+| `success` | matches expected post-skill state (e.g., sendit → `review_and_bugfix` or `in_progress`+impl, review → `review_and_bugfix` or `in_progress`, close → task file in `tasks/archive/`) | `shipped` |
 | `success` | unchanged or unexpected | `hard_error` (skill claimed success but didn't move state) |
 | `blocked` | any | `blocked` |
 | `stopped-for-human` | any | `blocked` |
