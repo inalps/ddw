@@ -404,7 +404,7 @@ After the Agent tool returns (success, error, or timeout):
 
 | Subagent result | Status check | Outcome |
 |---|---|---|
-| `success` | matches expected post-skill state (e.g., sendit → `review_and_bugfix` or `in_progress`+impl, qa → review_and_bugfix or in_progress, close → `closed`/archived) | `shipped` |
+| `success` | matches expected post-skill state (e.g., sendit → `review_and_bugfix` or `in_progress`+impl, qa → review_and_bugfix or in_progress, close → task file in `tasks/archive/`) | `shipped` |
 | `success` | unchanged or unexpected | `hard_error` (skill claimed success but didn't move state) |
 | `blocked` | any | `blocked` |
 | `stopped-for-human` | any | `blocked` |

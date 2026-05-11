@@ -23,6 +23,13 @@ if [[ -z "$CONTENT" ]] || ! echo "$CONTENT" | grep -q 'in_progress'; then
   exit 0
 fi
 
+# Auto-mode bypass: /ddw:auto manages task sequencing; this gate is for humans.
+source "$(dirname "$0")/_config.sh"
+DDW_RUNTIME="$DDW_PROJECT_DIR/$DDW_WORKFLOW_DIR/.ddw"
+if [[ -f "$DDW_RUNTIME/AUTO_RUN_ACTIVE" ]]; then
+  exit 0
+fi
+
 # Read the task file to get the Decision field
 if [[ ! -f "$FILE_PATH" ]]; then
   exit 0
@@ -36,7 +43,6 @@ if [[ -z "$DECISION" || "$DECISION" == "none" ]]; then
 fi
 
 # Locate the decision file
-source "$(dirname "$0")/_config.sh"
 WORKFLOW_DIR="$DDW_PROJECT_DIR/$DDW_WORKFLOW_DIR"
 DEC_FILE="$WORKFLOW_DIR/decisions/${DECISION}.md"
 
@@ -74,15 +80,11 @@ if [[ ${#TASK_IDS[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Check each task ID exists in TASK_LOG
-TASK_LOG="$WORKFLOW_DIR/logs/TASK_LOG.md"
-if [[ ! -f "$TASK_LOG" ]]; then
-  exit 0
-fi
-
+# Check each task ID exists as an actual task file on disk (not the derived log)
+TASKS_DIR="$WORKFLOW_DIR/tasks"
 MISSING=()
 for TID in "${TASK_IDS[@]}"; do
-  if ! grep -q "$TID" "$TASK_LOG"; then
+  if [[ ! -f "$TASKS_DIR/${TID}.md" && ! -f "$TASKS_DIR/archive/${TID}.md" ]]; then
     MISSING+=("$TID")
   fi
 done

@@ -11,6 +11,8 @@ Copy this file and rename to `TASK-{yyyymmdd}-{title}.md` when creating a new ta
 **Ready-At:** none
 **Priority:** P1 | P2 | P3
 **Depends-On:** none
+**Spec-affecting:** no
+**No-Test-Justification:**
 
 ---
 

@@ -12,7 +12,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
 0. **Read voice** — read `{workflowDir}/VOICE.md` (if it exists) and follow its communication style for all output during this skill.
 
-1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `specPath`, `autoUpdateSpec`, and `testCommand`. Resolve user identity by running `git config user.name || whoami`.
+1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` and `commands.test`. Resolve user identity by running `git config user.name || whoami`.
 
 1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh. Skill steps below reference data from source files, never from `logs/`.
 
@@ -43,23 +43,9 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
    **Summary:** {2-4 sentences: what changed, what files/systems affected, test count if applicable}
    ```
 
-8. **CURRENT_SPEC (opt-in, tiered)** — spec review is opt-in; skip silently unless at least one of these conditions is true:
-   - The task file's frontmatter declares `**Spec-affecting:** yes`
-   - `ddw.json.autoUpdateSpec` is `true`
-   - The task's `## Changes` section explicitly mentions spec sections
+8. **CURRENT_SPEC** — spec updates happen post-merge, not here. Skip. After merge completes (step 13), run `/ddw:sync-spec {task-id}` if this task was spec-affecting.
 
-   For purely internal tasks (refactor, tests, tooling, bug fix without visible-behavior change) where none of the above conditions are true: skip silently and append to Work Log: "Spec review: skipped (no spec-affecting changes declared)."
-
-   When ANY condition is true, run the tiered logic:
-   - If `specPath` is null or the spec file doesn't exist, skip and warn: "No spec configured. Consider running `/ddw:init` to set one up."
-   - Read the spec's headings/section structure first.
-   - Read the task's `## Changes` section (from step 7) to identify what behavior changed.
-   - Read only the spec sections affected by those changes — skip unrelated domain areas.
-   - Update the relevant sections of the spec to reflect the new reality. Use `templates/CURRENT_SPEC_TEMPLATE.md` as reference for section format. For each section updated, set or replace the `> Shaped by:` reference line with the current task and decision IDs (e.g., `> Shaped by: TASK-20260406-auth-flow | DEC-20260401-auth-redesign`).
-   - When `autoUpdateSpec` is `true`, apply updates silently and report what changed afterward. When `false`, show the proposed updates and require confirmation before applying.
-   - The "purely internal — owner must confirm" branch from the previous mandatory flow is removed: by entering this block at all, the task has already opted into spec review via one of the three conditions above.
-
-9. **Drift check** — run `/ddw:drift` logic. If the status is **DRIFTED** after the spec update, warn the user and list remaining contradictions. The user decides whether to fix now or defer.
+9. **Drift check** — run `/ddw:drift` logic to confirm spec and code are consistent. If **DRIFTED**, warn the user and list remaining contradictions. The user decides whether to fix now or defer.
 
 10. **CLAUDE.md status line** — skip. Hooks read task files directly; the CLAUDE.md status line is no longer used.
 
@@ -134,8 +120,9 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
          - `git revert HEAD --no-edit` (revert the merge commit)
          - Report to owner: "Smoke red after merge of TASK-{id}; reverted (revert commit: <sha>). Task NOT archived. Investigate and re-run `/ddw:close` once fixed."
          - Do NOT archive. Status stays `done`.
-     - If smoke green (or smoke not configured): proceed to step 14 (Archive).
+     - If smoke green (or smoke not configured): proceed to step 13.A.7.
     6. Print: "Merged TASK-{id} into {base}. Merge commit: <sha>. Smoke: <green | skipped | red+reverted>."
+    7. **Run spec update** — check the task file's `**Spec-affecting:**` field (or whether `ddw.json.autoUpdateSpec` is `true`). If either is true: run `/ddw:sync-spec {task-id}` now (post-merge, pre-archive). If neither: skip silently. Then proceed to step 14 (Archive).
 
     ### 13.B — PR mode (`merge.mode: "pr"`) — Phase B (deferred)
 
@@ -145,7 +132,8 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
       git push -u origin task/{task-id}
       gh pr create --base {base} --head task/{task-id}
       ```
-      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive."
+      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive.
+      If this task is spec-affecting, run `/ddw:sync-spec {task-id}` after the PR merges."
     - Do NOT archive yet. Status stays `done`.
     - Stop the close skill here (skip steps 14–15.5).
 
@@ -181,8 +169,8 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 16. **Report** a checklist confirming each item was completed or explicitly skipped with reason:
     - [ ] Task file status + Work Log
     - [ ] Changes section filled
-    - [ ] CURRENT_SPEC (updated / skipped — reason)
     - [ ] Drift check (SYNCED / DRIFTED — details)
+    - [ ] CURRENT_SPEC (updated via sync-spec post-merge / skipped — not spec-affecting)
     - [ ] DECISION_LOG + decision file (updated / N/A)
     - [ ] Retrospective (logged / skipped)
     - [ ] Proposed constraints (all resolved / N/A)

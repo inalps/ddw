@@ -296,10 +296,12 @@ Workflow directory: {workflowDir}/
 
 Plugin-provided (always up to date):
   Skills:    /ddw:ideate, /ddw:decision, /ddw:task, /ddw:sendit, /ddw:review,
-             /ddw:close, /ddw:qa, /ddw:drift, /ddw:architect, /ddw:upgrade
+             /ddw:close, /ddw:sync-spec, /ddw:qa, /ddw:drift, /ddw:architect, /ddw:upgrade
   Hooks:     validate-datetime, require-active-task, require-all-tasks,
-             require-review-before-close, check-task-complete,
-             enforce-review-after-impl, no-guess-skills, check-deps-done
+             require-review-before-close, check-task-complete, check-deps-done,
+             require-explicit-implementation-go, create-decided-tasks,
+             clear-awaiting-go, enforce-review-after-impl, auto-session-handoff,
+             no-guess-skills
   Agents:    shaper, developer, qa, architect
   Templates: PRD_TEMPLATE, TASK_TEMPLATE, WORKFLOW, VOICE (read at runtime)
 

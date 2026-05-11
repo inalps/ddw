@@ -25,6 +25,15 @@ fi
 
 # This edit is trying to set a task to done — enforce review gates
 
+# Auto-mode bypass: /ddw:auto ticks all checklist items and sets status to done
+# in a single edit. Reading the pre-edit file would see unchecked items and
+# false-block. Auto's confirm_on gates handle autonomy; this hook is for humans.
+source "$(dirname "$0")/_config.sh" 2>/dev/null || true
+DDW_RUNTIME="${DDW_PROJECT_DIR:-$CLAUDE_PROJECT_DIR}/${DDW_WORKFLOW_DIR:-workflows}/.ddw"
+if [[ -f "$DDW_RUNTIME/AUTO_RUN_ACTIVE" ]]; then
+  exit 0
+fi
+
 if [[ ! -f "$FILE_PATH" ]]; then
   exit 0
 fi

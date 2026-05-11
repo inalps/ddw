@@ -74,15 +74,6 @@ Create a new task file using the Decision-Driven Workflow.
 11. **Report**: the file path created and the task ID.
 
 12. **Ask**: "Want me to start implementing now?" If the user confirms (yes / do it / go / start):
-    - Get the actual current UTC datetime (`date -u +"%Y-%m-%dT%H:%M:%SZ"`)
-    - Set `**Status:** in_progress` in the task file
-    - Append a Work Log entry:
-      ```
-      ### {actual UTC datetime}
-      Status → in_progress. Beginning implementation.
-      ```
-    - Read guardrails at `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists)
-    - Read the task's Scope, Constraints, and Files sections
-    - Begin implementation
+    - Run `/ddw:sendit {task-id}`. That skill handles worktree setup, the awaiting-go flag, spec loading, and implementation. Do not implement directly from here.
 
 **Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

@@ -4,7 +4,6 @@
   "specPath": null,
   "autoUpdateSpec": false,
   "testFilePattern": "*.test.ts",
-  "testCommand": null,
   "userName": null,
   "paths": {
     "tasks": "tasks",

@@ -12,7 +12,7 @@ Shape a rough idea into a structured PRD (Product Requirements Document) through
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` (default: `workflows`). Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync PRD_LOG** — Sync `{workflowDir}/logs/PRD_LOG.md` by scanning all `PRD-*.md` files in both `{workflowDir}/prds/` and `prds/archive/`. Extract ID, Title, Owner, Status, Date from each file. Add missing rows and update existing rows. **Never delete rows** — logs are a permanent record. This ensures the log reflects the latest state after any merges.
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh.
 
 2. **Get today's UTC date** in `yyyymmdd` format for the file name prefix.
 
@@ -138,10 +138,7 @@ Shape a rough idea into a structured PRD (Product Requirements Document) through
    - {actual UTC datetime} — [owner] Initial PRD created via /ddw:ideate.
    ```
 
-9. **Add a row** to the index table in `{workflowDir}/logs/PRD_LOG.md`:
-   ```
-   | PRD-{yyyymmdd}-{slug} | {Title} | {userName} | {status} | {actual UTC datetime} |
-   ```
+9. **Skip inline PRD_LOG update** — `ddw-index` derives the log from PRD source files. The new PRD file IS the source of truth; the log will be refreshed on the next `ddw-index` run.
 
 10. **Guide the user on next steps:**
     - If status is `solid`: "Your PRD is solid at `{file path}`. When you're ready to turn this into a technical decision, run `/ddw:decision` — the architect will use this PRD as the foundation."

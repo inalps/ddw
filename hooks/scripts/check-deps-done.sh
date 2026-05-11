@@ -23,6 +23,13 @@ if [[ -z "$CONTENT" ]] || ! echo "$CONTENT" | grep -q 'in_progress'; then
   exit 0
 fi
 
+# Auto-mode bypass: /ddw:auto manages dependency ordering; this gate is for humans.
+source "$(dirname "$0")/_config.sh"
+DDW_RUNTIME="$DDW_PROJECT_DIR/$DDW_WORKFLOW_DIR/.ddw"
+if [[ -f "$DDW_RUNTIME/AUTO_RUN_ACTIVE" ]]; then
+  exit 0
+fi
+
 # Read the task file to get the Depends-On field
 if [[ ! -f "$FILE_PATH" ]]; then
   exit 0
@@ -36,7 +43,6 @@ if [[ -z "$DEPENDS_ON" || "$DEPENDS_ON" == "none" ]]; then
 fi
 
 # Locate workflow dir
-source "$(dirname "$0")/_config.sh"
 WORKFLOW_DIR="$DDW_PROJECT_DIR/$DDW_WORKFLOW_DIR"
 TASKS_DIR="$WORKFLOW_DIR/tasks"
 

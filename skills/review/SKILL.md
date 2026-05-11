@@ -10,9 +10,9 @@ Run a combined review and owner checklist for a task. Task: $ARGUMENTS (if not p
 
 This skill merges pre-done verification with the owner checklist walkthrough.
 
-1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `testCommand`, and `specPath`.
+1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir`, `commands.test`, and `specPath`.
 
-1.5. **Sync TASK_LOG** — Sync `{workflowDir}/logs/TASK_LOG.md` from all `TASK-*.md` files in both `{workflowDir}/tasks/` and `tasks/archive/`. Extract Owner, Status, Date, last Work Log timestamp. Add missing rows and update existing rows. **Never delete rows** — logs are a permanent record.
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh.
 
 2. **Read the task file** at `{workflowDir}/tasks/TASK-{date}-{title}.md`.
 
@@ -130,7 +130,7 @@ This skill merges pre-done verification with the owner checklist walkthrough.
    - If the section is empty or contains only the template placeholder, **BLOCK** the review: "No tests documented. Every implementation must include unit and integration tests. Write tests and fill the ## Tests section before re-running review."
    - If populated, confirm the listed test files exist in the codebase.
 
-6. **Run tests** — if `testCommand` is configured (not "none"):
+6. **Run tests** — if `commands.test` is configured (not null):
    - Run the test command.
    - Report pass/fail and test count.
    - If failing: list the failing tests and stop — do not proceed.
