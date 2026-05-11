@@ -22,9 +22,9 @@ Compare the project's current state against what the latest plugin expects. Chec
 
 ### 2.1 — Config (`ddw.json`)
 
-Check for missing fields that the current plugin expects:
-- `references` (array) — added for reference document tracking
-- Any other fields present in the init skill's Step 2 schema but absent in the project's config
+Read `templates/ddw.json.example` from the plugin root. Compare every key — at every nesting level — against the project's `ddw.json`. Flag MISSING for any key present in the example but absent in the project config. Existing values are never overwritten.
+
+This is the single source of truth for `ddw.json` shape — no need to enumerate individual fields here. New fields added to `ddw.json.example` are automatically caught without updating this skill.
 
 ### 2.2 — Templates
 
@@ -79,12 +79,6 @@ Check:
 - If `${workflowRoot}/.ddw/integration.json` exists OR `${workflowRoot}/${workflowDir}/.ddw/integration.json` exists → mark NEEDS-CLEANUP.
 - If `${workflowRoot}/.worktrees/integration/` exists → mark NEEDS-CLEANUP-MANUAL (worktree removal is destructive; surface to owner, don't auto-remove).
 
-### 2.10 — `merge.mode` config
-
-Phase A added `merge.mode` config key. Default `"local"`.
-
-Check: if `merge` block is absent from `ddw.json` → mark MISSING.
-
 ---
 
 ## Step 3 — Present Upgrade Report
@@ -122,10 +116,13 @@ After user confirms, apply all changes:
 
 ### 4.1 — Patch `ddw.json`
 
-Add missing fields with sensible defaults:
-- `references`: `[]`
+Deep-merge `templates/ddw.json.example` from the plugin root into the project's `ddw.json`:
+1. Read and parse both files as JSON.
+2. For every key present in the example but absent in the project config — at any nesting depth — add it with the example's default value.
+3. Never overwrite existing values. Never remove or rename existing fields.
+4. Write the result back with 2-space indentation, preserving field ordering from the example where possible.
 
-Do not remove or rename existing fields. Preserve all existing values.
+This subsumes all per-field checks (including `references`, `merge.mode`, `auto`, `smoke`, etc.) — new fields added to `ddw.json.example` are applied automatically without requiring edits to this skill.
 
 ### 4.2 — Patch Templates
 
@@ -184,11 +181,6 @@ If Step 2.9 reported NEEDS-CLEANUP:
 - Delete `worktree.integrationDir` key from `ddw.json` (preserve other worktree fields).
 - Delete `${workflowRoot}/.ddw/integration.json` and `${workflowRoot}/${workflowDir}/.ddw/integration.json` if they exist.
 - For NEEDS-CLEANUP-MANUAL (`.worktrees/integration/`): tell owner: "Found `.worktrees/integration/` — Phase A removed integration staging. Run `git worktree remove .worktrees/integration` to clean up when convenient."
-
-### 4.10 — Add `merge.mode`
-
-If Step 2.10 reported MISSING:
-- Add `"merge": { "mode": "local" }` to `ddw.json`. Place after the `auto` block for ordering consistency with `templates/ddw.json.example`.
 
 ---
 
