@@ -258,7 +258,7 @@ Without a subagent:
 3. Run `commands.test` (if configured). If red, log to inbox `"tests red, cannot advance review"` and continue loop.
 4. Edit the task file:
    - Change `**Status:** review_and_bugfix` → `**Status:** done`.
-   - In `## Owner Review Checklist`, replace any `- [ ]` with `- [x]` and append a marker line at the top of the section (or as the first checklist line if no marker exists yet):
+   - In `## Owner Review Checklist`, tick any remaining `- [ ]` items that are clearly automatable (test counts, code greps). Leave `- [ ]` on items that require human eyes (browser, UI, external behavior). Append a marker line at the top of the section:
      ```
      > Auto-advanced by /ddw:auto on {UTC datetime} (level: self-driving) — QA CLEAR + tests pass verified.
      ```
