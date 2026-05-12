@@ -83,6 +83,17 @@ Check:
 - If `${workflowRoot}/.ddw/integration.json` exists OR `${workflowRoot}/${workflowDir}/.ddw/integration.json` exists → mark NEEDS-CLEANUP.
 - If `${workflowRoot}/.worktrees/integration/` exists → mark NEEDS-CLEANUP-MANUAL (worktree removal is destructive; surface to owner, don't auto-remove).
 
+### 2.10 — Done-but-unarchived task backlog
+
+Newer DDW versions ship an `enforce-close-after-done` Stop hook that blocks finishing while any task with `Status: done` sits in active `tasks/` (i.e. `/ddw:close` was never run after the owner marked it done). Projects upgraded from older versions may have a backlog of such tasks.
+
+Scan `${workflowDir}/tasks/TASK-*.md` (non-archive) and collect every file whose `**Status:**` field equals `done`. Mark count as BACKLOG-COUNT.
+
+- If count is 0 → UP-TO-DATE.
+- If count > 0 → mark NEEDS-MANUAL-CLOSE — these need `/ddw:close` run on each (or moved manually to `tasks/archive/` if they were already merged before the hook existed).
+
+This step does not auto-fix because closing each task properly requires the merge + spec-update + archive sequence in `/ddw:close` — bulk file-moves would skip those steps. The upgrade reports the backlog so the owner can address it.
+
 ---
 
 ## Step 3 — Present Upgrade Report
@@ -186,6 +197,16 @@ If Step 2.9 reported NEEDS-CLEANUP:
 - Delete `worktree.integrationDir` key from `ddw.json` (preserve other worktree fields).
 - Delete `${workflowRoot}/.ddw/integration.json` and `${workflowRoot}/${workflowDir}/.ddw/integration.json` if they exist.
 - For NEEDS-CLEANUP-MANUAL (`.worktrees/integration/`): tell owner: "Found `.worktrees/integration/` — Phase A removed integration staging. Run `git worktree remove .worktrees/integration` to clean up when convenient."
+
+### 4.10 — Done-but-unarchived task backlog
+
+If Step 2.10 reported NEEDS-MANUAL-CLOSE:
+- List the backlog task IDs to the owner.
+- Tell the owner: "These tasks are `Status: done` but were never archived (no `/ddw:close` run). The new `enforce-close-after-done` Stop hook will block at the end of every session until they're cleared. Options:
+  1. Run `/ddw:close <task-id>` on each — proper close (handles merge/spec/archive). The patched close skill detects when work was committed directly on base (no task branch) and skips rebase/merge automatically.
+  2. If you are sure these were already merged + spec-synced and you just want to file them away, `mv` each to `${workflowDir}/tasks/archive/` manually.
+  3. To temporarily silence the Stop hook while you work through the backlog: `touch ${workflowDir}/.ddw/skip-close-enforcement` (delete the file when done)."
+- Do NOT auto-archive — proper close requires per-task judgment and may surface drift/spec updates the owner needs to see.
 
 ---
 

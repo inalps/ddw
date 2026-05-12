@@ -106,6 +106,9 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
     ### 13.A — Local mode (`merge.mode: "local"`)
 
+    0. **Detect deployment mode.** Run `git -C {workflowRoot} rev-parse --verify --quiet task/{task-id}` to check if the task branch exists.
+       - **If branch does NOT exist:** the task was committed directly to the base branch (no worktree, no task branch). Skip steps 13.A.1–13.A.4 entirely (rebase/merge are no-ops; the work is already in base). Print: "No task branch found — work was committed directly on `{base}`. Skipping rebase/merge." Then jump to step 13.A.5 (smoke).
+       - **If branch exists:** proceed with steps 13.A.1–13.A.4 below.
     1. **Fetch latest base** if a remote exists: `git fetch origin {base}` (best-effort; warn but continue if no remote).
     2. **Rebase task branch onto base.** In the worktree (or main repo for plain-branch fallback): `git -C <worktree> rebase {base}`.
        - If conflicts: stop. Report the conflicting paths to the owner. Do NOT archive. Status stays `done`. Owner resolves manually, re-runs `/ddw:close`.
