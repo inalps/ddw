@@ -235,23 +235,41 @@ Append the following block (or after any existing DDW section if one exists). Ne
 
 ---
 
-## Step 7 — Inject CLAUDE.md Block
+## Step 7 — Wire CLAUDE.md `@import` line
 
-Read `CLAUDE.md` in the project root (create if it doesn't exist). Add the following block. If there's already DDW content, replace it.
+DDW rules are shipped as `templates/CLAUDE_RULES.md` in the plugin root. The consumer's `CLAUDE.md` includes them via Claude Code's native `@import` directive — one line, resolved at load time. Plugin-side rule changes then propagate automatically without ever re-editing the consumer's file.
 
-```markdown
-## DDW (mandatory)
-Config: `{workflowDir}/ddw.json`. Flow: `/ddw:ideate` → `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → code → `/ddw:review` → `/ddw:close`. On session start, scan `{workflowDir}/` for active work and report status.
+The line to write is **literally**:
 
-When the user asks "what's next?" or similar, scan the full workflow pipeline and list everything not done:
-- Draft PRDs (`prds/PRD-*.md` with `Status: draft`) → suggest `/ddw:ideate` to refine or `/ddw:decision` to proceed
-- Proposed decisions (`decisions/DEC-*.md` with `Status: proposed`) → suggest reviewing and setting to `decided`
-- Decided decisions with uncreated tasks (`## Tasks` has `(not yet created)`) → suggest `/ddw:task`
-- Planned tasks (`tasks/TASK-*.md` with `Status: planned`) → suggest `/ddw:sendit`
-- In-progress tasks (`Status: in_progress`) → suggest continuing implementation
-- Tasks in review (`Status: review_and_bugfix`) → suggest completing review
-- Milestone progress from `MILESTONES.md` — show done/total per active milestone
 ```
+@${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md
+```
+
+`${CLAUDE_PLUGIN_DIR}` is expanded by Claude Code at runtime — do not substitute it during init.
+
+### Procedure
+
+1. Read `CLAUDE.md` in the project root. If it doesn't exist, create it with:
+   ```
+   # {project name}
+
+   <!-- DDW workflow rules are auto-included from the plugin. Edit your own rules above or below this line. -->
+   @${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md
+   ```
+   …and stop here.
+
+2. If `CLAUDE.md` already contains the line `@${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md` (exact string match) → **no-op**.
+
+3. If `CLAUDE.md` contains a legacy DDW block (heading line `## DDW (mandatory)` — written by older versions of this skill) → **replace** the entire block (heading + body, stopping at the next `##` heading or end-of-file) with the `@import` line. Notify the owner that DDW rules now live in the plugin template and propagate automatically.
+
+4. Otherwise, **insert** the `@import` line into the existing CLAUDE.md:
+   - Preferred location: immediately after the first `# ` (H1) heading, separated by one blank line.
+   - If no H1 exists: insert at the top of the file.
+   - If the top is already dominated by substantive content with no clean insertion point (e.g. a long preamble block), append at the bottom of the file under a separator. Flag this as the fallback path in the report.
+
+### Why this is one line, not a block
+
+Older versions of this skill wrote a hardcoded `## DDW (mandatory)` block directly into `CLAUDE.md`. Any rule change then required string-surgery in every consumer repo. The `@import` directive removes that coupling: the plugin owns the rules, the consumer owns its `CLAUDE.md`, and uninstall is one line removed. See `templates/CLAUDE_RULES.md` for the rule content.
 
 ---
 

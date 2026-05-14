@@ -52,9 +52,18 @@ Scan all `PRD-*.md` files in `{workflowDir}/prds/` and `prds/archive/`. Check if
 
 If `specPath` is set in config, check if the spec file follows the current template structure (has `> Shaped by:` reference lines, has all expected sections from `templates/CURRENT_SPEC_TEMPLATE.md`).
 
-### 2.6 — CLAUDE.md
+### 2.6 — CLAUDE.md — migrate hardcoded block to `@import`
 
-Check the DDW block in `CLAUDE.md` against the current expected content from the init skill's Step 8.
+Current DDW versions deliver rules via a single `@import` line in `CLAUDE.md` pointing at `${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md`. The plugin then owns the rule content; the consumer's `CLAUDE.md` is never re-edited after init.
+
+Read `CLAUDE.md` in the project root. Classify:
+
+- **UP-TO-DATE** — the file contains the line `@${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md` (exact string match). No work needed.
+- **NEEDS-MIGRATE** — the file contains a legacy `## DDW (mandatory)` heading (the block written by older versions of init Step 7), and the `@import` line is absent. Will be replaced by the `@import` line.
+- **MISSING** — neither the legacy block nor the `@import` line is present. Will add the `@import` line.
+- **TRANSITIONAL** — both the legacy block AND the `@import` line are present (e.g. partial earlier migration). The transitional state is acceptable but not the target; will fully migrate by removing the legacy block.
+
+Once the migration in Step 4.6 runs, future `/ddw:upgrade` runs are no-ops for this step.
 
 ### 2.7 — Top-level `.ddw/` migration
 
@@ -169,10 +178,20 @@ If the spec exists but doesn't follow the new template structure:
 - If yes: add `> Shaped by: pre-upgrade` reference lines to each major section
 - If no: skip — the close skill will add references as sections get updated naturally
 
-### 4.6 — Patch CLAUDE.md
+### 4.6 — Migrate CLAUDE.md to `@import`
 
-If the DDW block is outdated:
-- Replace the existing DDW block with the current version from init Step 5
+Apply the classification from Step 2.6:
+
+- **UP-TO-DATE** → no-op.
+- **NEEDS-MIGRATE** → delete the entire legacy `## DDW (mandatory)` block (heading + body, stopping at the next `##` heading or end-of-file) and write the `@import` line in its place. The line to write, **literally**:
+  ```
+  @${CLAUDE_PLUGIN_DIR}/templates/CLAUDE_RULES.md
+  ```
+  (`${CLAUDE_PLUGIN_DIR}` is expanded by Claude Code at runtime — do not substitute.) Notify the owner: "DDW rules now ship via `@import` from the plugin's `templates/CLAUDE_RULES.md`. Your hardcoded block has been removed; rule updates will propagate automatically on plugin upgrade."
+- **MISSING** → insert the `@import` line. Prefer immediately after the first `# ` (H1) heading; if no H1, at the top; if the top is dominated by substantive content with no clean insertion point, append at the bottom and flag as the fallback path.
+- **TRANSITIONAL** → delete the legacy `## DDW (mandatory)` block (preserving the existing `@import` line). Notify the owner that the migration is now complete.
+
+After this step, the plugin never re-edits the consumer's `CLAUDE.md` again — rule changes propagate via the `@import` target only.
 
 ### 4.7 — Migrate top-level `.ddw/`
 

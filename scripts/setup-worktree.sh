@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # setup-worktree.sh — create a git worktree for a DDW task
-# Usage: setup-worktree.sh <TASK-id> [--base <TASK-id>] [--root <consumer-path>]
+# Usage: setup-worktree.sh <TASK-id> [--base <TASK-id>] [--base-branch <name>] [--root <consumer-path>]
 #
 # Chmod: ensure this file is executable:
 #   chmod +x scripts/setup-worktree.sh
@@ -11,17 +11,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
-  echo "Usage: setup-worktree.sh <TASK-id> [--base <TASK-id>] [--root <consumer-path>]"
+  echo "Usage: setup-worktree.sh <TASK-id> [--base <TASK-id>] [--base-branch <name>] [--root <consumer-path>]"
   echo ""
-  echo "  <TASK-id>       Task ID to create a worktree for (e.g. TASK-20260507-foo)"
-  echo "  --base <id>     Branch from task/<id> instead of main"
-  echo "  --root <path>   Consumer repo root (default: cwd)"
+  echo "  <TASK-id>            Task ID to create a worktree for (e.g. TASK-20260507-foo)"
+  echo "  --base <id>          Branch from task/<id> (for stacked tasks)"
+  echo "  --base-branch <name> Branch from an arbitrary branch (e.g. develop, release/v2)"
+  echo "  --root <path>        Consumer repo root (default: cwd)"
+  echo ""
+  echo "Base-branch precedence: --base-branch > --base > ddw.json merge.baseBranch > \"main\""
+  echo "--base and --base-branch are mutually exclusive."
   exit 1
 }
 
 # --- Parse arguments ---
 TASK_ID=""
 BASE_TASK=""
+BASE_BRANCH_OVERRIDE=""
 ROOT=""
 
 while [[ $# -gt 0 ]]; do
@@ -30,6 +35,12 @@ while [[ $# -gt 0 ]]; do
       shift
       BASE_TASK="${1:-}"
       [[ -z "$BASE_TASK" ]] && { echo "Error: --base requires a TASK-id argument" >&2; usage; }
+      shift
+      ;;
+    --base-branch)
+      shift
+      BASE_BRANCH_OVERRIDE="${1:-}"
+      [[ -z "$BASE_BRANCH_OVERRIDE" ]] && { echo "Error: --base-branch requires a branch-name argument" >&2; usage; }
       shift
       ;;
     --root)
@@ -56,6 +67,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Mutual exclusivity
+if [[ -n "$BASE_TASK" && -n "$BASE_BRANCH_OVERRIDE" ]]; then
+  echo "Error: --base and --base-branch are mutually exclusive" >&2
+  usage
+fi
 
 [[ -z "$TASK_ID" ]] && { echo "Error: TASK-id is required" >&2; usage; }
 
@@ -139,10 +156,19 @@ if [[ "$count" -ge "$MAX_CONCURRENT" ]]; then
 fi
 
 # --- Step 8: Determine base branch ---
-if [[ -n "$BASE_TASK" ]]; then
+# Precedence: --base-branch > --base task-id > ddw.json merge.baseBranch > "main"
+if [[ -n "$BASE_BRANCH_OVERRIDE" ]]; then
+  BASE_BRANCH="$BASE_BRANCH_OVERRIDE"
+elif [[ -n "$BASE_TASK" ]]; then
   BASE_BRANCH="task/${BASE_TASK}"
 else
-  BASE_BRANCH="main"
+  BASE_BRANCH=$(read_config "merge.baseBranch" "main")
+fi
+
+# Verify the base branch exists before attempting worktree creation
+if ! git -C "$ROOT" rev-parse --verify "$BASE_BRANCH" &>/dev/null; then
+  echo "Error: Base branch '${BASE_BRANCH}' does not exist. Check spelling, or run 'git fetch' if it's a remote-only branch." >&2
+  exit 1
 fi
 
 # --- Step 9: git worktree add ---

@@ -198,31 +198,45 @@ Build sets keyed by status. Exclude any task in `inflight_tasks`.
 
 Walk the rows in order. Take the **first** row with a workable candidate. Within a row, pick the oldest by `created_at`. Skip candidates already in `inflight_tasks`.
 
-**Row 1 — Auto-close** (requires `level == self-driving`)
+**Level gating (summary).** Each row is gated by autonomy level:
+
+| Level | Active rows | Inactive rows |
+|---|---|---|
+| `advisor` | (none — single-pass plan dump via step 5.A; never reaches 5.3 logic for dispatch) | 1, 2, 3, 4, 5, 6 |
+| `co-pilot` | 3 (review), 4 (sendit), 6 (decisions-pending notice) | 1 (close), 2 (advance review), 5 (task creation) |
+| `self-driving` | 1, 2, 3, 4, 5, 6 | (none) |
+
+The intent: `co-pilot` runs the build-and-test work (review, sendit) and surfaces pending decisions, but stops short of state transitions that finalize a task (close, advance to `done`) or create new tasks from decisions. `self-driving` adds those terminal/creation steps. `advisor` writes a plan and exits without dispatching anything.
+
+Inactive rows are skipped silently — they do not block the loop. After walking the row table, if no active row produced a workable candidate, set exit reason "queue empty" and continue to step 5.1.
+
+---
+
+**Row 1 — Auto-close** (active: `self-driving`)
 - Trigger: a task has `**Status:** done` and is not yet archived.
 - Action: pre-verify (step 5.5a), then dispatch `/ddw:close` subagent.
 
-**Row 2 — Advance review** (requires `level == self-driving`)
+**Row 2 — Advance review** (active: `self-driving`)
 - Trigger: a task has `**Status:** review_and_bugfix` AND its Review Log shows the latest QA verdict is `CLEAR` AND running `commands.test` (if configured) succeeds.
 - Action: state flip directly (step 5.5b — no subagent).
 
-**Row 3 — Review**
+**Row 3 — Review** (active: `co-pilot`, `self-driving`)
 - Trigger: a task has `**Status:** in_progress`, its `## Implementation Summary` is non-empty, AND its Review Log has no QA verdict yet.
 - Cap: at most 1 review subagent at a time (sequential).
-- Action: dispatch `/ddw:review` subagent. Review detects `AUTO_RUN_ACTIVE`, skips owner checklist, sets `review_and_bugfix` if QA CLEAR + tests pass. Row 2 then advances it to `done`.
+- Action: dispatch `/ddw:review` subagent. Review detects `AUTO_RUN_ACTIVE`, skips owner checklist, sets `review_and_bugfix` if QA CLEAR + tests pass. Row 2 then advances it to `done` (self-driving only).
 
-**Row 4 — Sendit**
+**Row 4 — Sendit** (active: `co-pilot`, `self-driving`)
 - Trigger: a task has `**Status:** planned` AND the count of in-flight sendit subagents is `< config.maxConcurrent`.
 - Action: dispatch `/ddw:sendit` subagent.
 
 **Serialization for DB-touching tasks.** Before dispatching a sendit subagent for a task with `touches_db: true` in its frontmatter, check whether any currently-in-flight task (`inflight_tasks`) also has `touches_db: true`. If yes, defer this task — do not launch in parallel. Continue scanning for other launchable tasks (next candidate in Row 4, or fall through to Row 5/6). The rationale: parallel migrations or parallel real-DB test runs corrupt the shared dev DB. This rule has no effect for projects whose tasks don't set `touches_db`. Future extension: read `auto.serialize_on` from `ddw.json` (default `["touches_db"]`) to drive which frontmatter flags trigger this check.
 
-**Row 5 — Task creation** (requires `level == self-driving`)
+**Row 5 — Task creation** (active: `self-driving`)
 - Trigger: a decision has `status: decided` AND no task references it via `**Decision:** {DEC-id}`.
 - Cap: at most 1 task-creation subagent at a time.
 - Action: dispatch `/ddw:task` subagent with the DEC id pre-filled.
 
-**Row 6 — Proposed decisions** (always)
+**Row 6 — Proposed decisions** (active: `co-pilot`, `self-driving`)
 - Trigger: a decision has `status: proposed` AND its id is not in `seen_proposed_decs`.
 - Action: append to `inbox_sections.decisions_pending`, add id to `seen_proposed_decs`. No dispatch.
 

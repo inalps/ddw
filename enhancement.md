@@ -925,15 +925,33 @@ Every mutable frontmatter field has exactly **one writer**. All other code paths
 |---|---|---|
 | `id`, `title`, `created_at` | `/ddw:task` (creation) | Never re-written |
 | `dec`, `files_changed` (initial) | `/ddw:task` | At creation |
+| `touches_db` | task author (manual at creation) | Read by `/ddw:auto` for sendit serialization (Row 4); see §14 |
 | `started_at` | dev subagent | When work begins in worktree |
 | `status: in_progress` | `/ddw:task` | At creation |
 | `status: ready_for_integration` | `/ddw:sendit` | Gate-passed flip |
-| `status: closed`, `closed_at` | `/ddw:close` | At close |
+| `status: review_and_bugfix` | `/ddw:review` / `/ddw:sendit` | After implementation + review handoff |
+| `status: done`, `closed_at` | `/ddw:close` (local mode) | At close |
+| `status: in_review` | `/ddw:pr` | **github-pr mode only.** Set after `gh pr create` succeeds. Local-mode tasks skip this state entirely. Flow: `done → in_review` |
+| `status: archived` | `/ddw:close` (post-PR-merge re-run) | github-pr mode: terminal after PR merged on GitHub |
 | `status: abandoned` | `/ddw:close --abandon` | Explicit |
 | `ready_at` | `/ddw:sendit` | Same write as `status: ready_for_integration` |
 | `files_changed` (updates) | dev subagent / `/ddw:close` | Append-on-edit |
 
+**Full status flow:**
+- **Local mode** (`merge.mode: "local"`): `planned → in_progress → review_and_bugfix → done → archived`
+- **GitHub-PR mode** (`merge.mode: "github-pr"`): `planned → in_progress → review_and_bugfix → done → in_review → archived` (the `done → in_review` transition is the only mode-conditional state in the flow; `/ddw:pr` is the sole writer)
+
 Read-only consumers: `ddw-index`, `ddw-stage`, `ddw-unstage`, `ddw-queue`, `/ddw:doctor`.
+
+### Task body sections (treated as authoritative state)
+
+| Field | Writer | Notes |
+|---|---|---|
+| `**PR:** <url>` | `/ddw:pr` | github-pr mode only. Written after `gh pr create` returns. Used as the audit-trail link by `/ddw:close` on the post-merge re-run. Body line, not frontmatter — mirrors the PRD `## Decision Backlog` pattern below. |
+| `## Implementation Summary` | dev subagent | Non-empty triggers Row 3 review in `/ddw:auto` |
+| `## Review Log` (QA verdict) | `/ddw:review` / `qa` agent | Latest verdict gates Row 2 advancement in `/ddw:auto` |
+| `## Owner Review Checklist` | task author (creation) / `/ddw:auto` Row 2 (auto-tick) / owner (manual ticks) | Must be fully `[x]` before `/ddw:close` or `/ddw:pr` |
+| `## Work Log` | dev subagent / `/ddw:sendit` / `/ddw:review` / `/ddw:close` / `/ddw:pr` / `/ddw:auto` Row 2 | Append-only; every state-transitioning writer appends a timestamped entry |
 
 ### DEC frontmatter
 
@@ -1033,9 +1051,11 @@ Each task runs in its own helper agent so the main orchestrator stays focused. S
 
 ### Three speed settings
 
-- **`advisor`** — picks the next thing, writes it down, stops. You drive. (Closest to today's flow.)
-- **`co-pilot`** — runs the build-and-test work (rows 4–6). Stops at anything that closes or stages.
-- **`self-driving`** — runs everything, with the safety rules below.
+- **`advisor`** — picks the next thing, writes it down, stops. You drive. (Closest to today's flow.) No rows in the §5.3 table fire for dispatch.
+- **`co-pilot`** — runs the build-and-test work (rows 3 review, 4 sendit) and surfaces pending decisions (row 6). Stops short of anything that closes a task (row 1), advances a task to `done` (row 2), or creates new tasks from decisions (row 5).
+- **`self-driving`** — runs everything: rows 1–6, with the safety rules below.
+
+The authoritative gating table lives in `skills/auto/SKILL.md` step 5.3 — keep both in sync if either moves.
 
 ### Never wait — write a note instead
 
