@@ -12,6 +12,7 @@ Copy this file and rename to `TASK-{yyyymmdd}-{title}.md` when creating a new ta
 **Priority:** P1 | P2 | P3
 **Depends-On:** none
 **Spec-affecting:** no
+**touches_db:** false  <!-- set true if this task modifies DB schema, runs migrations, or executes real-DB integration tests. /ddw:auto serializes tasks with this flag — see Row 4. -->
 **No-Test-Justification:**
 
 ---

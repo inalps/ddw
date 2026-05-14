@@ -16,6 +16,7 @@ The owner has gone to bed. Your job: work through as many tasks as possible with
 
 - Make architectural decisions. Decisions still in `proposed` stay that way — they go to the morning inbox.
 - Reimplement any existing skill. You dispatch them via subagents using the Agent tool.
+- Launch two `touches_db: true` tasks in parallel — these are serialized regardless of `maxConcurrent`. See Row 4 in step 5.3.
 
 ## Prerequisite: bypass permissions for overnight runs
 
@@ -213,6 +214,8 @@ Walk the rows in order. Take the **first** row with a workable candidate. Within
 **Row 4 — Sendit**
 - Trigger: a task has `**Status:** planned` AND the count of in-flight sendit subagents is `< config.maxConcurrent`.
 - Action: dispatch `/ddw:sendit` subagent.
+
+**Serialization for DB-touching tasks.** Before dispatching a sendit subagent for a task with `touches_db: true` in its frontmatter, check whether any currently-in-flight task (`inflight_tasks`) also has `touches_db: true`. If yes, defer this task — do not launch in parallel. Continue scanning for other launchable tasks (next candidate in Row 4, or fall through to Row 5/6). The rationale: parallel migrations or parallel real-DB test runs corrupt the shared dev DB. This rule has no effect for projects whose tasks don't set `touches_db`. Future extension: read `auto.serialize_on` from `ddw.json` (default `["touches_db"]`) to drive which frontmatter flags trigger this check.
 
 **Row 5 — Task creation** (requires `level == self-driving`)
 - Trigger: a decision has `status: decided` AND no task references it via `**Decision:** {DEC-id}`.

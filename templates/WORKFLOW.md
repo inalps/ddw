@@ -120,6 +120,7 @@ A task marked `done` is never reopened.
 | `in_progress` | Claude | Implementation started |
 | `review_and_bugfix` | Claude | Implementation complete, under review |
 | `done` | Owner | Verification passed |
+| `in_review` | `/ddw:pr` | Team-PR mode only. PR opened on GitHub; awaiting reviewer merge. `/ddw:close` flips it back to `done` for archive after merge is confirmed. |
 | `cancelled` | Owner | Task dropped |
 
 ---
@@ -189,6 +190,7 @@ Three role-separated profiles in `{workflowDir}/agents/`:
 | `architect.md` | System designer | System coherence, dependency awareness, constraint discovery | Before implementation |
 | `developer.md` | Implementer | Spec-first, minimal blast radius, regression awareness | During implementation |
 | `qa.md` | Evaluator | Adversarial, independent, evidence-based | After implementation |
+| `security.md` | Security reviewer | Attacker mindset, OWASP + STRIDE, evidence-based, Opus | Standalone via `/ddw:audit` |
 
 **Information separation:**
 - Shaper reads nothing from future phases (no decisions, tasks, or code). It operates purely on user input.
@@ -281,6 +283,56 @@ The `require-active-task` hook checks that the **current user** (from `ddw.json`
 **Two developers closing tasks at the same time:** Each runs `/ddw:close` on their own branch. When branches merge to main, the next skill invocation rebuilds logs from the merged state.
 
 **Without git:** Everything works except branch isolation. Identity comes from config, sync from file scanning, archive from file moves.
+
+## Branch and Worktree Discipline
+
+- 1 task = 1 branch = 1 merge to main.
+- main is always releasable.
+- No permanent integration branches (`integration/*`, `develop`, etc.).
+- Sequential merge over stacked PR — use stacked PRs only when a dependent task can't wait for the parent merge.
+- Task branch + worktree live for the lifetime of the work. In team-PR mode, that means until the PR is merged. Do not tear down the worktree on review feedback — fix in the same branch.
+- Small fix exception — for 1–2 file fixes with no schema/migration changes, a plain branch in the main tree is fine; worktree is for parallel work or when the main tree has in-progress state.
+- DB changes follow expand → migrate → contract — add columns nullable first, backfill, switch reads/writes, drop old fields in a later task.
+- Unfinished features behind hidden routes / unused code (pre-MVP) or feature flags (post-MVP). Never merge user-visible half-broken behavior to main.
+
+## Merge Modes
+
+Configured by `merge.mode` in `ddw.json`. Default: `"local"`. Existing projects continue to work unchanged.
+
+- `merge.mode: "local"` — default. `/ddw:close` does rebase + test + local merge to main. No PR. Suitable for solo work or local-first projects.
+- `merge.mode: "github-pr"` — `/ddw:pr` pushes the task branch and opens a GitHub PR; task moves to `Status: in_review`. After a reviewer merges the PR on GitHub, `/ddw:close` verifies the merge (via `gh pr view`), pulls the merged base, and archives the task. Requires `gh` CLI authenticated to the repo.
+
+Related fields:
+- `merge.baseBranch` — base branch for merges/PRs. Default `"main"`.
+- `merge.deleteBranchOnMerge` — in github-pr mode, whether to delete the local task branch after the remote PR merges. Default `false`. (Remote branch deletion is a GitHub repo setting.)
+
+## Parallel Auto-Mode Safety
+
+`/ddw:auto` can run multiple `/ddw:sendit` subagents in parallel up to `auto.maxConcurrent`. Some classes of work cannot safely run in parallel — declare them via frontmatter.
+
+- Tasks with `touches_db: true` in frontmatter are serialized by `/ddw:auto` — they never run in parallel with another `touches_db: true` task, regardless of `maxConcurrent`.
+- Set `touches_db: true` for any task that modifies `schema/`, runs migrations, or executes real-DB integration tests.
+- Other parallelism conflicts (same-file edits in code, filesystem races in shared dirs) are not auto-detected — declare `Depends-On:` in TASK frontmatter when work must serialize.
+- `auto.serialize_on` (in `ddw.json`, default `["touches_db"]`) defines which frontmatter flags trigger this gate. Future extension point.
+
+## Security Audits
+
+The `/ddw:audit` skill runs an adversarial security review (OWASP Top 10 + STRIDE) using the `agents/security.md` profile (Opus). It is standalone — not hooked into `/ddw:review`, `/ddw:pr`, or `/ddw:close`. Invoke when you need real security review, not spec-compliance.
+
+**Modes:**
+- `/ddw:audit` — whole-codebase audit
+- `/ddw:audit TASK-{id}` — scoped to files in that task
+- `/ddw:audit <path>` — scoped to a directory or file
+
+Reports are saved to `{workflowDir}/audits/AUDIT-{date}-{slug}.md` (directory auto-created on first audit). Task-scoped audits also append a `## Security Audit` entry to the task's Review Log.
+
+**When to invoke:**
+- Before merging changes to auth, sessions, payments, admin boundaries, or anything exposed unauthenticated
+- Before a major public deployment
+- Periodically (e.g., quarterly) for whole-codebase sweeps
+- After a vulnerability disclosure in a dependency
+
+**Why not automatic:** Security audit cost (Opus) and signal-to-noise concerns. Most tasks have no security surface. Auto-invoking per task burns budget and trains owners to ignore findings as noise. Standalone keeps findings high-signal.
 
 ## Session Hygiene
 

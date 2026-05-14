@@ -97,12 +97,14 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
 
 13. **Merge** (trunk-based: rebase task branch onto main, run tests, merge):
 
-    Read `merge.mode` from `ddw.json` (default `"local"`).
+    Read `merge.mode` from `ddw.json` (default `"local"`). Route by mode:
+    - `"local"` → §13.A (rebase + test + local merge here).
+    - `"github-pr"` → §13.B (verify a GitHub PR has been merged remotely; this skill does NOT open the PR — that is `/ddw:pr`'s job).
 
     **Common pre-merge** (both modes):
     a. Resolve task branch: `task/{task-id}`.
     b. Resolve worktree path from `ddw.json.worktree.taskDir` if configured (substitute `{TASK_NAME}` → task id). If no worktree exists, the task is on a plain branch in the main repo — switch to working in the main repo for steps below.
-    c. Determine base branch: `main` (override later if `merge.baseBranch` is added).
+    c. Determine base branch: `merge.baseBranch` if set, else `main`.
 
     ### 13.A — Local mode (`merge.mode: "local"`)
 
@@ -127,19 +129,47 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     6. Print: "Merged TASK-{id} into {base}. Merge commit: <sha>. Smoke: <green | skipped | red+reverted>."
     7. **Run spec update** — check the task file's `**Spec-affecting:**` field (or whether `ddw.json.autoUpdateSpec` is `true`). If either is true: run `/ddw:sync-spec {task-id}` now (post-merge, pre-archive). If neither: skip silently. Then proceed to step 14 (Archive).
 
-    ### 13.B — PR mode (`merge.mode: "pr"`) — Phase B (deferred)
+    ### 13.B — github-pr mode (`merge.mode: "github-pr"`)
 
-    Phase B implementation pending. For now in `pr` mode:
-    - Print: "merge.mode: pr — Phase B not yet implemented in plugin. Push the task branch and create the PR manually:
-      ```
-      git push -u origin task/{task-id}
-      gh pr create --base {base} --head task/{task-id}
-      ```
-      After the PR merges remotely, re-run `/ddw:close` and the merge step will see the task is already in `{base}` and proceed to archive."
-    - Do NOT archive yet. Status stays `done`.
-    - Stop the close skill here (skip steps 14–15.5).
+    In this mode the PR is opened by `/ddw:pr` (which moved status to `in_review`) and merged on GitHub by a reviewer. This step verifies the remote merge happened and prepares for archive. Do NOT run any local merge here.
 
-14. **Archive** (only reached in local mode after a clean merge, OR in PR mode after a re-run that detects the task branch is already in base):
+    0. **Hard gate** — read the task's `**Status:**` field. It MUST be `in_review`. If it is still `done`, block:
+       > "Task is `done` but no PR has been opened. Run `/ddw:pr {task-id}` first to push the branch and open the PR; that transitions status to `in_review`."
+
+       If it is `review_and_bugfix` or anything else, block with the appropriate message.
+
+    1. **Find the PR** — run:
+       ```bash
+       gh pr view task/{task-id} --json number,url,state,mergedAt,mergeCommit 2>/dev/null
+       ```
+       - If the PR is not found, block: "No PR found for `task/{task-id}`. Run `/ddw:pr {task-id}` to open one."
+
+    2. **Check PR state:**
+       - **`state == "MERGED"`**: capture `mergedAt` and `mergeCommit.oid` (the merge commit SHA on `{base}`). Proceed to step 3.
+       - **`state == "OPEN"`**: block: "PR is still open: {url}. Merge it on GitHub (or have a reviewer merge it), then re-run `/ddw:close {task-id}`."
+       - **`state == "CLOSED"`** (not merged): block and ask the Owner: "PR was closed without merging: {url}. Re-open and merge, or move the task back via a new TASK if the work was abandoned."
+
+    3. **Sync local base with the remote merge:**
+       - `git -C {workflowRoot} fetch origin {base}`
+       - `git -C {workflowRoot} checkout {base}`
+       - `git -C {workflowRoot} pull --ff-only origin {base}`
+
+       If `pull --ff-only` fails (local `{base}` has diverging commits), surface the error and stop — owner resolves manually.
+
+    4. **Skip rebase / local merge** — GitHub already integrated the change. Capture the merge SHA from step 2 for the Work Log:
+       ```
+       ### {actual UTC datetime}
+       Status → done (post-merge). PR merged on GitHub: {url}. Merge commit on {base}: {sha}.
+       ```
+       Append this entry to `## Work Log`. Flip `**Status:**` from `in_review` back to `done` for archive consistency (the post-done close-flow expects `done` going into archive).
+
+    5. **Worktree teardown** — same logic as §13.A's step 15. Reuse it: resolve worktree path from `ddw.json.worktree.taskDir`, `git worktree remove` if clean, leave with WIP warning otherwise. Branch deletion in github-pr mode is governed by `merge.deleteBranchOnMerge` — if true, `git branch -d task/{task-id}` locally (the remote branch deletion is GitHub's responsibility, configured per-repo). If false (default), leave the local branch.
+
+    6. **Run spec update** — same as §13.A step 7: if `**Spec-affecting:** yes` (or `ddw.json.autoUpdateSpec` is true), run `/ddw:sync-spec {task-id}`. Else skip.
+
+    7. Proceed to step 14 (Archive).
+
+14. **Archive** (reached after a clean local merge in §13.A, or after §13.B confirms the PR was merged on GitHub):
     a. Move `{workflowDir}/tasks/TASK-{date}-{title}.md` to `{workflowDir}/tasks/archive/`
     b. Check if the linked decision has any remaining non-archived tasks:
        - Scan `{workflowDir}/tasks/TASK-*.md` (non-archive) for files where `**Decision:**` matches this task's decision
@@ -176,7 +206,7 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
     - [ ] DECISION_LOG + decision file (updated / N/A)
     - [ ] Retrospective (logged / skipped)
     - [ ] Proposed constraints (all resolved / N/A)
-    - [ ] Merge (local: <sha> | pr: pushed/awaiting | skipped — reason)
+    - [ ] Merge (local: <sha> | github-pr: PR merged <sha> | skipped — reason)
     - [ ] Smoke after merge (green / red+reverted / skipped — reason)
     - [ ] Archived (task / task + decision / not yet — reason)
     - [ ] Worktree cleanup (removed / kept — reason)

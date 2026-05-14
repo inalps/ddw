@@ -9,7 +9,8 @@
     "tasks": "tasks",
     "decisions": "decisions",
     "prds": "prds",
-    "logs": "logs"
+    "logs": "logs",
+    "audits": "audits"
   },
   "commands": {
     "install": null,
@@ -37,9 +38,12 @@
     "maxConcurrent": null,
     "subagentTimeoutMinutes": 20,
     "consecutiveErrorLimit": 3,
-    "confirm_on": ["destructive", "architecture", "external-side-effects"]
+    "confirm_on": ["destructive", "architecture", "external-side-effects"],
+    "serialize_on": ["touches_db"]
   },
   "merge": {
-    "mode": "local"
+    "mode": "local",
+    "baseBranch": "main",
+    "deleteBranchOnMerge": false
   }
 }

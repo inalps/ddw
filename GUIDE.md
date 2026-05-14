@@ -185,7 +185,7 @@ DDW has two layers of enforcement:
 
 ## Agent Profiles
 
-Four role-separated mindsets. Each is loaded at the right phase — they define **how to think**, not what to check.
+Five role-separated mindsets. Each is loaded at the right phase — they define **how to think**, not what to check. (The fifth, Security, is shown in the Adversarial Security Audit section below — not in this diagram because it runs standalone, not inline with the lifecycle.)
 
 ```
   ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
@@ -253,6 +253,10 @@ Check types: code-grep | code-review | spec-compare | manual
 
 New invariants are proposed during implementation, approved during review. Stale ones are pruned when intentional changes make them obsolete.
 
+## Adversarial Security Audit
+
+`/ddw:audit` is a separate review surface from `/ddw:qa`. QA checks spec-compliance (acceptance criteria + invariants). Audit checks attacker-resistance (OWASP Top 10 + STRIDE) using the `agents/security.md` profile (Opus). It is standalone — not hooked into `/ddw:review`, `/ddw:close`, or `/ddw:pr`, since most tasks have no security surface and auto-invocation would burn budget and train owners to ignore findings. Invoke it on demand: whole-codebase (`/ddw:audit`), per-task (`/ddw:audit TASK-id`), or per-path (`/ddw:audit <path>`). Reports land in `{workflowDir}/audits/`.
+
 ## Drift Detection
 
 `/ddw:drift` compares CURRENT_SPEC against the codebase section-by-section:
@@ -308,6 +312,15 @@ DDW supports multiple developers working in parallel — and a single integratio
 - **Integration is serial**: only one task tests at a time (hard-gated by `.ddw/integration.json.testing`)
 - **Owner-aware hooks**: `require-active-task` checks *your* user — parallel work is fine
 - **Close on branch**: Then merge via PR
+
+### Merge modes (local vs team-PR)
+
+DDW supports two merge modes via `merge.mode` in `ddw.json` (default `"local"`):
+
+- `"local"` — `/ddw:close` rebases the task branch, runs tests, merges to main locally. Fast for solo work; no PR overhead.
+- `"github-pr"` — `/ddw:pr` pushes the task branch, opens a GitHub PR via `gh`, and flips `Status: done → in_review`. After a reviewer merges the PR on GitHub, the owner runs `/ddw:close`, which verifies the remote merge, pulls the updated base, and archives the task. Requires the `gh` CLI authenticated to the repo.
+
+See [`templates/WORKFLOW.md` § Merge Modes](templates/WORKFLOW.md) for details, related config (`merge.baseBranch`, `merge.deleteBranchOnMerge`), and the team-PR-mode-only `in_review` status. Parallel-auto-mode safety (e.g. `touches_db: true` serialization) is also documented there.
 
 ## Integration Loop
 
@@ -414,7 +427,7 @@ Completed tasks → `tasks/archive/`. Completed decisions → `decisions/archive
 ddw/
 ├── .claude-plugin/
 │   └── plugin.json                Plugin manifest
-├── skills/                        14 skills (Claude Code slash commands)
+├── skills/                        16 skills (Claude Code slash commands)
 │   ├── init/SKILL.md              Bootstrap DDW into a project
 │   ├── ideate/SKILL.md            Shape ideas → PRD (Shaper agent)
 │   ├── decision/SKILL.md          Create decisions (Architect agent)
@@ -422,7 +435,9 @@ ddw/
 │   ├── task/SKILL.md              Create tasks with acceptance criteria
 │   ├── sendit/SKILL.md            Auto-worktree, implement, review, queue (Developer agent)
 │   ├── qa/SKILL.md                Automated QA (QA agent)
+│   ├── audit/SKILL.md             Adversarial security audit — OWASP + STRIDE (Security agent, Opus)
 │   ├── review/SKILL.md            QA + owner checklist
+│   ├── pr/SKILL.md                Open a GitHub PR for a done task (team-PR mode only)
 │   ├── close/SKILL.md             Spec, drift, retro, archive, worktree cleanup, queue tick
 │   ├── queue/SKILL.md             Inspect/advance integration queue (list, tick, status)
 │   ├── integration/SKILL.md       Exception paths (unstage, reset)
@@ -441,11 +456,12 @@ ddw/
 ├── hooks/
 │   ├── hooks.json                 Hook wiring (4 event types)
 │   └── scripts/                   Enforcement scripts (validate-datetime, etc.)
-├── agents/                        4 agent profiles (role mindsets)
+├── agents/                        5 agent profiles (role mindsets)
 │   ├── shaper.md                  Thinking partner for ideation
 │   ├── architect.md               System designer
 │   ├── developer.md               Spec-first implementer
-│   └── qa.md                      Adversarial evaluator
+│   ├── qa.md                      Adversarial evaluator
+│   └── security.md                Adversarial security reviewer (Opus)
 └── templates/                     Project scaffolding
     ├── PRD_TEMPLATE.md
     ├── TASK_TEMPLATE.md
