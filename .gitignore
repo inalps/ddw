@@ -1,6 +1,11 @@
 .claude/
+.DS_Store
 
-# Smoke-test artifacts produced when running ddw-index against the plugin repo itself.
-# The plugin doesn't ship a top-level logs/ — that's a consumer-side artifact.
+# Smoke-test artifacts produced when running DDW skills against the plugin repo itself.
+# The plugin doesn't ship a top-level logs/ or audits/ — those are consumer-side artifacts.
 # (templates/logs/ is shipped and tracked.)
 /logs/
+/audits/
+
+# Author's working design notes — kept locally, not distributed via the plugin.
+/design-process.md
