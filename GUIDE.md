@@ -81,26 +81,20 @@ For a quick overview, see [README.md](README.md).
                    Status: → done
                             │
                             ▼
-                    ┌──────────────┐
-                    │ INTEGRATION  │
-                    │              │
-                    └──────────────┘
-                     /ddw:sendit step 14 → ready_for_integration + Ready-At
-                     ddw-queue tick     → FIFO stage into integration WT
-                     ddw-stage          → git merge --no-ff
-                     manual smoke-test   in .worktrees/integration/
-                            │
-                            ▼
                     ┌──────────┐
                     │  CLOSE   │
                     │          │
                     └──────────┘
                      /ddw:close
+                     ─ rebase task branch onto base
+                     ─ re-run tests in worktree
+                     ─ merge --no-ff into base (local mode)
+                       or print push + gh pr create (pr mode)
                      ─ update CURRENT_SPEC (opt-in)
                      ─ run drift detection
                      ─ retrospective (auto-skipped on clean+short+single-session)
                      ─ archive task / auto-close DEC if last task
-                     ─ clear integration.json + ddw-queue tick
+                     ─ remove task worktree
                      ─ ddw-index regenerates 4 log views
 ```
 
@@ -124,10 +118,11 @@ For a quick overview, see [README.md](README.md).
                                               (auto-closes when last
                                                linked task closes)
 
-  Task:      planned ──→ in_progress ──→ ready_for_integration ──→ closed ──→ (archived)
-                  │            │                  │
-                  │            │           queued by ddw-queue,
-                  │            │           merged by ddw-stage
+  Task:      planned ──→ in_progress ──→ review_and_bugfix ──→ done ──→ closed ──→ (archived)
+                  │            │                  │              │
+                  │            │           QA CLEAR + owner    /ddw:close
+                  │            │           verifies            rebases + merges (local)
+                  │            │                               or prints push + gh pr create (pr)
                   │            │
                   └──→ abandoned (via /ddw:close --abandon)
 ```
@@ -280,7 +275,7 @@ Runs automatically at `/ddw:close`. If DRIFTED, you decide: fix the spec or fix 
 
 ## Team Development
 
-DDW supports multiple developers working in parallel — and a single integration worktree as the merge point.
+DDW supports multiple developers working in parallel. Trunk-based: each task branch rebases onto base and merges (local) or opens a PR (team-PR mode). No long-lived integration branch.
 
 ```
   main branch ──────────────────────────────────────────────────────>
@@ -288,30 +283,20 @@ DDW supports multiple developers working in parallel — and a single integratio
        │ /ddw:decision      │ /ddw:task
        │ /ddw:task          │ (planning stays on main)
        │                    │
-       ├── task/feat-a ─────┤──── Dev A: /ddw:sendit → qa → review → ready_for_integration
-       │                    │                                              │
-       └── task/feat-b ─────┘──── Dev B: /ddw:sendit → qa → review → ready_for_integration
-                                                                           │
-                                                  ddw-queue tick (FIFO)    │
-                                                          ▼                │
-                                                 ┌───────────────────┐     │
-                                                 │  integration WT   │ ←───┘
-                                                 │  (merged via       │
-                                                 │   ddw-stage        │
-                                                 │   --no-ff)         │
-                                                 └───────────────────┘
-                                                          │
-                                                  manual smoke-test
-                                                          │
-                                                  /ddw:close → PR
+       ├── task/feat-a ─────┤──── Dev A: /ddw:sendit → qa → review → done
+       │                    │                                          │
+       │                    │                                  /ddw:close
+       │                    │                                  (rebase + merge,
+       │                    │                                   or /ddw:pr for PR)
+       │                    │                                          │
+       └── task/feat-b ─────┘──── Dev B: /ddw:sendit → qa → review → done ──→ ...
 ```
 
 - **Identity**: `git config user.name` at runtime — no per-user config
 - **Planning on main**: Decisions and tasks on `main` so everyone sees them
 - **Implementation in worktrees**: `setup-worktree.sh TASK-id` creates `.worktrees/TASK-id/` on a fresh `task/TASK-id` branch
-- **Integration is serial**: only one task tests at a time (hard-gated by `.ddw/integration.json.testing`)
 - **Owner-aware hooks**: `require-active-task` checks *your* user — parallel work is fine
-- **Close on branch**: Then merge via PR
+- **Close on branch**: Local mode rebases + merges; team-PR mode opens a PR via `/ddw:pr`
 
 ### Merge modes (local vs team-PR)
 
@@ -322,25 +307,16 @@ DDW supports two merge modes via `merge.mode` in `ddw.json` (default `"local"`):
 
 See [`templates/WORKFLOW.md` § Merge Modes](templates/WORKFLOW.md) for details, related config (`merge.baseBranch`, `merge.deleteBranchOnMerge`), and the team-PR-mode-only `in_review` status. Parallel-auto-mode safety (e.g. `touches_db: true` serialization) is also documented there.
 
-## Integration Loop
+## Per-Task Worktree
 
-Phase A's integration loop moves a finished task from "ready" → "merged into integration" → "closed". **The user-facing surface is slash commands** — the bash scripts are implementation details that skills invoke.
+Each task implements in its own worktree on a fresh `task/TASK-id` branch. Parallel work has no file collisions. **The user-facing surface is slash commands** — the bash scripts are implementation details that skills invoke.
 
-### Setup (one-time)
-
-Create the integration worktree from `main`:
-
-```bash
-git worktree add .worktrees/integration -b integration main
-```
-
-Configure `ddw.json`:
+### Configuration
 
 ```json
 {
   "worktree": {
     "taskDir": ".worktrees/{TASK_NAME}",
-    "integrationDir": ".worktrees/integration",
     "syncFiles": [".env"],
     "maxConcurrent": 3
   },
@@ -348,46 +324,29 @@ Configure `ddw.json`:
     "install": "pnpm install",
     "dev": "pnpm dev",
     "migrate": null
+  },
+  "merge": {
+    "mode": "local"
   }
 }
 ```
 
-`syncFiles` are symlinked from the main repo into each new worktree (existing files are left alone). `commands.install` runs automatically when a worktree is missing `node_modules` / `.venv` / `vendor`. `commands.migrate` runs automatically when staging detects a migration file in the merged diff (configure `worktree.migrationGlob`).
+`syncFiles` are symlinked from the main repo into each new worktree (existing files are left alone). `commands.install` runs automatically when a worktree is missing `node_modules` / `.venv` / `vendor`. `commands.migrate` runs automatically when `/ddw:close` detects a migration file in the diff (configure `worktree.migrationGlob`).
 
 ### Per-task flow (slash commands only)
 
 ```
 /ddw:task                  ← author the task
-/ddw:sendit TASK-id        ← creates worktree, implements, runs review,
-                              flips status: ready_for_integration,
-                              calls queue tick → auto-merges into integration
-                              if integration was idle
-   (manual smoke-test in .worktrees/integration/)
-/ddw:close TASK-id         ← archives task, clears integration.json,
-                              advances queue, removes worktree
-```
-
-Exception paths:
-
-```
-/ddw:queue list            ← what's in the FIFO?
-/ddw:queue status          ← what's currently testing?
-/ddw:queue tick            ← manually advance (rare; auto-called by sendit/close)
-
-/ddw:integration unstage   ← smoke-test failed, revert and flip back to in_progress
-/ddw:integration reset     ← something went sideways, wipe integration to origin/main
+/ddw:sendit TASK-id        ← creates worktree, implements, runs review
+/ddw:close TASK-id         ← rebase + merge (local mode) or print push + PR
+                              instructions (pr mode); archives task; removes worktree
 ```
 
 ### Scripts (under the hood — invoked by skills)
 
 | Script | Invoked by |
 |---|---|
-| `setup-worktree.sh TASK-id [--base TASK-id]` | `/ddw:sendit` step 7.5 |
-| `ddw-stage TASK-id` | `ddw-queue tick` (transitively from `/ddw:sendit` step 14, `/ddw:close` step 13d, `/ddw:queue tick`) |
-| `ddw-unstage TASK-id` | `/ddw:integration unstage` |
-| `ddw-queue tick \| list \| status` | `/ddw:queue` |
-| `ddw-integration-status` | `/ddw:queue status` (delegate) |
-| `ddw-integration-reset [--yes]` | `/ddw:integration reset` |
+| `setup-worktree.sh TASK-id [--base TASK-id]` | `/ddw:sendit` |
 | `ddw-index.mjs` | Owner runs manually or via pre-commit hook |
 
 You can still call any script directly from a shell — the skill layer is for ergonomics, not gatekeeping.
@@ -433,25 +392,20 @@ ddw/
 │   ├── decision/SKILL.md          Create decisions (Architect agent)
 │   ├── prd/SKILL.md               PRD lifecycle helpers (close)
 │   ├── task/SKILL.md              Create tasks with acceptance criteria
-│   ├── sendit/SKILL.md            Auto-worktree, implement, review, queue (Developer agent)
+│   ├── sendit/SKILL.md            Auto-worktree, implement, review (Developer agent)
 │   ├── qa/SKILL.md                Automated QA (QA agent)
 │   ├── audit/SKILL.md             Adversarial security audit — OWASP + STRIDE (Security agent, Opus)
 │   ├── review/SKILL.md            QA + owner checklist
 │   ├── pr/SKILL.md                Open a GitHub PR for a done task (team-PR mode only)
-│   ├── close/SKILL.md             Spec, drift, retro, archive, worktree cleanup, queue tick
-│   ├── queue/SKILL.md             Inspect/advance integration queue (list, tick, status)
-│   ├── integration/SKILL.md       Exception paths (unstage, reset)
+│   ├── close/SKILL.md             Rebase + merge, spec, drift, retro, archive, worktree cleanup
+│   ├── sync-spec/SKILL.md         Update CURRENT_SPEC.md post-merge (auto-invoked from /ddw:close)
 │   ├── drift/SKILL.md             Spec-code consistency check
 │   ├── architect/SKILL.md         Design review / bootstrap
-│   └── upgrade/SKILL.md           Upgrade project scaffolding
-├── scripts/                       Worktree + integration runtime
+│   ├── upgrade/SKILL.md           Upgrade project scaffolding
+│   └── auto/SKILL.md              Overnight orchestrator — autonomous pipeline loop
+├── scripts/                       Worktree + log-index runtime
 │   ├── ddw-index.mjs              Regenerate log views from source files
 │   ├── setup-worktree.sh          Create per-task git worktree
-│   ├── ddw-stage                  Merge a task branch into integration
-│   ├── ddw-unstage                Revert the staged task (HEAD~1)
-│   ├── ddw-queue                  tick / list / status — FIFO by Ready-At
-│   ├── ddw-integration-status     Print testing + queue + recent commits
-│   ├── ddw-integration-reset      Reset integration worktree to origin/main
 │   └── _ddw_read_config.mjs       Internal config-reader helper
 ├── hooks/
 │   ├── hooks.json                 Hook wiring (4 event types)
@@ -498,9 +452,6 @@ ddw/
 ├── MILESTONES.md          Planning priority order
 ├── WORKFLOW.md            Full workflow reference
 └── VOICE.md               Communication style
-
-.ddw/                      Per-machine runtime state (gitignored)
-└── integration.json       { "testing": "TASK-..." | null }
 ```
 
 ## Session Handoff

@@ -37,14 +37,10 @@ Or full power:
 
 ```
 /ddw:ideate → /ddw:decision → /ddw:task → /ddw:sendit → /ddw:review
-                                              ↓
-                                  ready_for_integration
-                                              ↓
-                                  ddw-queue tick → ddw-stage
-                                              ↓
-                                          /ddw:close
-                                              ↓
-                                       /ddw:prd close
+                                                            ↓
+                                                       /ddw:close
+                                                            ↓
+                                                     /ddw:prd close
 ```
 
 ---
@@ -108,18 +104,19 @@ Everything is a slash command. The bash scripts under `scripts/` are implementat
 | `/ddw:decision` | Create decision with architect review |
 | `/ddw:prd close PRD-id` | Close a PRD once its decisions exist |
 | `/ddw:task` | Break decision into scoped tasks |
-| `/ddw:sendit` | Auto-creates a per-task worktree, implements, runs review, queues for integration |
+| `/ddw:sendit` | Auto-creates a per-task worktree, implements, runs review |
 | `/ddw:qa` | Automated QA: acceptance criteria + invariants |
 | `/ddw:review` | QA + tests + owner checklist |
-| `/ddw:close` | Spec update, drift, retro, archive, **remove worktree**, advance queue |
-| `/ddw:queue` | `list` / `tick` / `status` — inspect or advance the integration queue |
-| `/ddw:integration` | `unstage <TASK-id>` / `reset` — exception paths for staged work |
+| `/ddw:pr` | (team-PR mode) Push branch, open GitHub PR, transition task to in_review |
+| `/ddw:audit` | Adversarial security audit (OWASP+STRIDE) on Opus. Standalone. |
+| `/ddw:close` | Spec update, drift, retro, archive, **remove worktree** |
+| `/ddw:sync-spec` | Update CURRENT_SPEC.md after a spec-affecting task lands (post-merge). Auto-invoked from `/ddw:close` when relevant. |
 | `/ddw:drift` | Check spec-code consistency |
 | `/ddw:architect` | Design review or bootstrap constraints |
 | `/ddw:upgrade` | Upgrade project to latest plugin version |
 | `/ddw:auto` | Overnight orchestrator. Loops the pipeline autonomously; logs blockers to morning inbox |
 
-In the happy path you only ever need: `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:close`. The worktree, queue tick, and integration merge happen automatically.
+In the happy path you only ever need: `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:close` (local mode) or `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:pr` → `/ddw:close` (team-PR mode, when `merge.mode: "github-pr"`). The worktree creation and teardown happen automatically.
 
 ---
 
