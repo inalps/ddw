@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DDW、はじめよう — AIと一緒に開発する、やさしいワークフロー</title>
+<style>
+  :root {
+    --p1: #6366f1;
+    --p2: #ec4899;
+    --p3: #f59e0b;
+    --p4: #10b981;
+    --p5: #06b6d4;
+    --ink: #1f2937;
+    --soft: #6b7280;
+    --bg: #fef7ff;
+    --card: #ffffff;
+    --line: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.75;
+    font-size: 17px;
+  }
+  .hero {
+    background: linear-gradient(135deg, var(--p1) 0%, var(--p2) 100%);
+    color: white;
+    padding: 80px 24px 100px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 400px;
+    height: 400px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -100px;
+    width: 350px;
+    height: 350px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+  }
+  .hero h1 {
+    font-size: 72px;
+    margin: 0 0 16px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    position: relative;
+  }
+  .hero .wave {
+    font-size: 64px;
+    margin-bottom: 8px;
+    display: inline-block;
+    animation: wave 2.5s ease-in-out infinite;
+    transform-origin: 70% 70%;
+  }
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(20deg); }
+    40% { transform: rotate(-10deg); }
+    60% { transform: rotate(15deg); }
+    80% { transform: rotate(-5deg); }
+  }
+  .hero p.sub {
+    font-size: 22px;
+    margin: 0 0 8px;
+    font-weight: 500;
+    opacity: 0.95;
+    position: relative;
+  }
+  .hero p.tag {
+    font-size: 17px;
+    opacity: 0.85;
+    margin-top: 16px;
+    position: relative;
+    font-weight: 400;
+  }
+  .container {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  section {
+    padding: 64px 0;
+  }
+  section h2 {
+    font-size: 36px;
+    margin: 0 0 16px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  section .lead {
+    font-size: 19px;
+    color: var(--soft);
+    margin: 0 0 40px;
+  }
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .problem {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+    border: 2px solid transparent;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .problem:hover {
+    transform: translateY(-4px);
+    border-color: var(--p2);
+  }
+  .problem .emoji {
+    font-size: 44px;
+    margin-bottom: 12px;
+  }
+  .problem h3 {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+  .problem p {
+    color: var(--soft);
+    margin: 0;
+    font-size: 15px;
+  }
+  .solution {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-radius: 24px;
+    padding: 48px;
+    text-align: center;
+    position: relative;
+  }
+  .solution .big-emoji {
+    font-size: 80px;
+    margin-bottom: 16px;
+  }
+  .solution h3 {
+    font-size: 30px;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .solution p {
+    font-size: 18px;
+    max-width: 620px;
+    margin: 0 auto 32px;
+    color: var(--ink);
+  }
+  .powers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .power {
+    background: white;
+    padding: 24px 16px;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .power .icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+  }
+  .power strong {
+    display: block;
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  .power span {
+    font-size: 14px;
+    color: var(--soft);
+  }
+  .gates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+  }
+  .gate {
+    background: white;
+    padding: 16px 18px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    font-size: 15px;
+    border-left: 4px solid var(--p3);
+  }
+  .gate .gate-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .gate strong {
+    color: var(--ink);
+  }
+  .closing {
+    font-size: 16px;
+    color: var(--ink);
+    max-width: 620px;
+    margin: 16px auto 0;
+    opacity: 0.85;
+  }
+  .artifact {
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.08);
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 24px;
+    align-items: start;
+    border-top: 6px solid var(--p1);
+  }
+  .artifact:nth-of-type(1) { border-top-color: var(--p1); }
+  .artifact:nth-of-type(2) { border-top-color: var(--p2); }
+  .artifact:nth-of-type(3) { border-top-color: var(--p4); }
+  .artifact-icon {
+    font-size: 56px;
+    line-height: 1;
+  }
+  .artifact h3 {
+    margin: 0 0 4px;
+    font-size: 22px;
+  }
+  .artifact h3 .muted {
+    font-size: 16px;
+    color: var(--soft);
+    font-weight: 500;
+  }
+  .artifact .path {
+    display: inline-block;
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .artifact .what-the {
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0 0 8px;
+  }
+  .artifact .description {
+    color: var(--soft);
+    margin: 0 0 16px;
+    font-size: 15px;
+  }
+  .status-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--soft);
+  }
+  .status-pill {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .built-by {
+    font-size: 14px;
+    color: var(--soft);
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .built-by code {
+    background: var(--ink);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .setup-box {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-radius: 16px;
+    padding: 28px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 14px;
+    overflow-x: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    position: relative;
+  }
+  .setup-box::before {
+    content: '⚡ Claude Codeに貼り付け';
+    position: absolute;
+    top: -12px;
+    left: 24px;
+    background: var(--p3);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif;
+    font-weight: 600;
+  }
+  .setup-box .prompt {
+    color: var(--p4);
+  }
+  .setup-box .comment {
+    color: #9ca3af;
+    font-style: italic;
+  }
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 20px;
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border-left: 6px solid var(--p1);
+    position: relative;
+  }
+  .step:nth-child(1) { border-left-color: var(--p1); }
+  .step:nth-child(2) { border-left-color: var(--p2); }
+  .step:nth-child(3) { border-left-color: var(--p3); }
+  .step:nth-child(4) { border-left-color: var(--p4); }
+  .step:nth-child(5) { border-left-color: var(--p5); }
+  .step .num {
+    font-size: 44px;
+    font-weight: 900;
+    color: var(--p1);
+    text-align: center;
+    line-height: 1;
+  }
+  .step:nth-child(2) .num { color: var(--p2); }
+  .step:nth-child(3) .num { color: var(--p3); }
+  .step:nth-child(4) .num { color: var(--p4); }
+  .step:nth-child(5) .num { color: var(--p5); }
+  .step .body h4 {
+    margin: 0 0 4px;
+    font-size: 19px;
+  }
+  .step .body p {
+    margin: 0;
+    color: var(--soft);
+    font-size: 15px;
+  }
+  .cmd {
+    background: var(--ink);
+    color: white;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .arrow {
+    text-align: center;
+    font-size: 28px;
+    color: var(--p2);
+  }
+  .auto {
+    background: linear-gradient(135deg, var(--p5) 0%, var(--p1) 100%);
+    color: white;
+    border-radius: 24px;
+    padding: 48px;
+    margin-top: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .auto::before {
+    content: '✨';
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    font-size: 50px;
+    opacity: 0.6;
+    animation: sparkle 3s ease-in-out infinite;
+  }
+  @keyframes sparkle {
+    0%, 100% { transform: scale(1) rotate(0); opacity: 0.6; }
+    50% { transform: scale(1.2) rotate(15deg); opacity: 1; }
+  }
+  .auto h3 {
+    font-size: 32px;
+    margin: 0 0 12px;
+  }
+  .auto .auto-cmd {
+    display: inline-block;
+    background: rgba(0,0,0,0.3);
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 18px;
+    margin: 16px 0 24px;
+    backdrop-filter: blur(10px);
+  }
+  .auto p {
+    font-size: 17px;
+    margin: 8px 0;
+    line-height: 1.8;
+  }
+  .auto .small {
+    font-size: 14px;
+    opacity: 0.85;
+    margin-top: 20px;
+  }
+  .try-it {
+    background: white;
+    border-radius: 24px;
+    padding: 48px;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
+    border: 3px dashed var(--p2);
+  }
+  .try-it h3 {
+    font-size: 30px;
+    margin: 0 0 24px;
+    text-align: center;
+  }
+  .try-list {
+    counter-reset: try;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .try-list li {
+    counter-increment: try;
+    position: relative;
+    padding: 16px 16px 16px 70px;
+    margin-bottom: 12px;
+    background: var(--bg);
+    border-radius: 12px;
+    font-size: 16px;
+  }
+  .try-list li::before {
+    content: counter(try);
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--p1), var(--p2));
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 18px;
+  }
+  .footer {
+    text-align: center;
+    padding: 60px 24px 48px;
+    color: var(--soft);
+    font-size: 14px;
+  }
+  .footer .heart {
+    color: var(--p2);
+    font-size: 20px;
+  }
+  .pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .pill {
+    background: rgba(255,255,255,0.25);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    backdrop-filter: blur(10px);
+  }
+  .callout {
+    background: #fff3cd;
+    border-left: 6px solid var(--p3);
+    padding: 20px 24px;
+    border-radius: 12px;
+    margin: 24px 0;
+    font-size: 16px;
+  }
+  .callout strong {
+    color: #92400e;
+  }
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 48px; }
+    .hero .wave { font-size: 48px; }
+    .hero p.sub { font-size: 19px; }
+    section h2 { font-size: 28px; }
+    .powers { grid-template-columns: 1fr; }
+    .gates { grid-template-columns: 1fr; }
+    .artifact { grid-template-columns: 1fr; text-align: center; }
+    .artifact .status-flow { justify-content: center; }
+    .step { grid-template-columns: 1fr; text-align: center; }
+    .step .num { font-size: 36px; margin: 0 auto; }
+    .cmd { justify-self: center; }
+    .solution, .auto, .try-it { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wave">👋</div>
+  <h1>DDW、はじめよう</h1>
+  <p class="sub">AIと一緒に開発するための、やさしいワークフロー</p>
+  <p class="tag">設計はリポジトリの中に。各ステップにハードゲート。人間もAIもバイパス不可。</p>
+  <div class="pill-row">
+    <span class="pill">オープンソース</span>
+    <span class="pill">Claude Codeプラグイン</span>
+    <span class="pill">トランクベース</span>
+    <span class="pill">自動モード 🤖</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <section>
+    <h2>こんな悩み、ない？ 😩</h2>
+    <p class="lead">AIで開発してるとき、こんなことになりがちじゃない？</p>
+    <div class="problem-grid">
+      <div class="problem">
+        <div class="emoji">🌀</div>
+        <h3>決めごとが行方不明</h3>
+        <p>「あれ、Postgresにしたんだっけ、SQLiteだっけ?」3週間後、なんでそうしたか誰も覚えてない。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🪿</div>
+        <h3>タスクがぐちゃぐちゃ</h3>
+        <p>何が終わってて、何が進行中? AIが何を書き換えたの? git logをスクロールして祈るしかない。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🎲</div>
+        <h3>AIが勝手に暴走</h3>
+        <p>小さな修正を頼んだだけなのに、AIが3つのファイルを書き換えてた…ってこと、ない?</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="solution">
+      <div class="big-emoji">🔒</div>
+      <h3>大事なアイデア：設計はリポジトリの中に、mainへの道にゲートあり</h3>
+      <p>
+        他のAIツールはコードを書いて祈るだけ。DDWは違う。何を作るか、なぜ作るか、どうやって完了を判断するか — 全部リポジトリの中にマークダウンで書かせる。そして各フェーズの間にハードゲート。ステップを飛ばしたコードは、誰のものでもmainに行けない。あなたのも、AIのも。
+      </p>
+      <div class="gates">
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>PRDなし? → <strong>決定できない。</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>決定なし? → <strong>タスク作れない。</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>AC失敗? → <strong>クローズできない。</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>未クローズ? → <strong>マージできない。</strong></span>
+        </div>
+      </div>
+      <p class="closing">
+        6ヶ月後、リポジトリの誰が見ても、何が決まって、いつ、なぜそうしたかが分かる。それがDDWが守る「金」。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>DDWが追跡する3つのもの 📚</h2>
+    <p class="lead">どのプロジェクトも <code>workflows/</code> に3種類のドキュメントが溜まっていく。それぞれ何のためのものか、見てみよう。</p>
+
+    <div class="artifact">
+      <div class="artifact-icon">💭</div>
+      <div>
+        <h3>PRD <span class="muted">— 要件定義書</span></h3>
+        <p class="what-the">「何を」「なぜ」を記録。</p>
+        <span class="path">workflows/prds/PRD-{date}-{name}.md</span>
+        <p class="description">
+          中身: 何を作りたいか、なぜ大事か、成功とは何か、スコープの範囲。大きい学校プロジェクトの前に書く企画書みたいなもの。
+        </p>
+        <div class="status-flow">
+          <span>ステータスの流れ:</span>
+          <span class="status-pill">draft</span>
+          <span>→</span>
+          <span class="status-pill">ready</span>
+          <span>→</span>
+          <span class="status-pill">closed</span>
+        </div>
+        <p class="built-by">作成: <code>/ddw:ideate</code> — AIが質問してくれて、答えを元にPRDを書く。</p>
+      </div>
+    </div>
+
+    <div class="artifact">
+      <div class="artifact-icon">🧭</div>
+      <div>
+        <h3>Decision <span class="muted">— アーキテクチャ決定記録 (ADR)</span></h3>
+        <p class="what-the">「どうやって」を記録。</p>
+        <span class="path">workflows/decisions/DEC-{date}-{name}.md</span>
+        <p class="description">
+          中身: コンテキスト、検討した選択肢、決定、トレードオフ、予想される結果。「A, B, Cを試した — Bを選んだ理由は…」と書く実験ノート的なもの。
+        </p>
+        <div class="status-flow">
+          <span>ステータスの流れ:</span>
+          <span class="status-pill">proposed</span>
+          <span>→</span>
+          <span class="status-pill">decided</span>
+          <span>→</span>
+          <span class="status-pill">archived</span>
+        </div>
+        <p class="built-by">作成: <code>/ddw:decision</code> — アーキテクトAIがトレードオフをレビューして一緒に書く。</p>
+      </div>
+    </div>
+
+    <div class="artifact">
+      <div class="artifact-icon">✅</div>
+      <div>
+        <h3>Task <span class="muted">— QAログ付きの作業単位</span></h3>
+        <p class="what-the">「実行」を記録。</p>
+        <span class="path">workflows/tasks/TASK-{date}-{name}.md</span>
+        <p class="description">
+          中身: スコープ、触るファイル、受入基準(AC)テーブル(各ACにチェックタイプ: code-grep / code-review / spec-compare / manual)、作業ログ(タイムスタンプ付き進捗)、レビューログ(<code>/ddw:qa</code> がPASS/FAIL/REGRESSIONを追記)。チェックリスト＋採点ルーブリック付きの宿題みたいなもの。
+        </p>
+        <div class="status-flow">
+          <span>ステータスの流れ:</span>
+          <span class="status-pill">planned</span>
+          <span>→</span>
+          <span class="status-pill">in_progress</span>
+          <span>→</span>
+          <span class="status-pill">review_and_bugfix</span>
+          <span>→</span>
+          <span class="status-pill">done</span>
+          <span>→</span>
+          <span class="status-pill">archived</span>
+        </div>
+        <p class="description" style="font-size: 14px; margin: -4px 0 12px;">
+          (チームPRモードでは <span class="status-pill">in_review</span> が <span class="status-pill">done</span> と <span class="status-pill">archived</span> の間に入る。)
+        </p>
+        <p class="built-by">作成: <code>/ddw:task</code>、実行: <code>/ddw:sendit</code>、レビュー: <code>/ddw:review</code> (内部で <code>/ddw:qa</code> が走る)、クローズ: <code>/ddw:close</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>30秒でセットアップ ⚡</h2>
+    <p class="lead">3ステップだけ。コーヒーが冷める前に終わる。</p>
+
+    <div class="flow">
+
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <h4>DDWリポジトリをcloneする</h4>
+          <p>GitHubからDDWの最新版を取得して、好きな場所に置く。ホームフォルダでも、ツール用フォルダでも、どこでもOK。</p>
+        </div>
+        <div class="cmd">git clone …</div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <h4>Claude Codeをプラグイン付きで起動</h4>
+          <p>プロジェクトフォルダから、Claude Codeを起動。さっきcloneしたDDWフォルダのパスを指定する。</p>
+          <div class="setup-box" style="margin-top: 14px;">
+<span class="prompt">$</span> claude --plugin-dir <span style="color: var(--p3);">/path/to/ddw</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <h4>プロジェクトに導入</h4>
+          <p>Claude Code内で初期化コマンドを実行。<code>workflows/</code>フォルダが作成されて、決定・タスク・ルールがここに溜まっていく。</p>
+        </div>
+        <div class="cmd">/ddw:init</div>
+      </div>
+
+    </div>
+
+    <div class="callout">
+      <strong>これで何ができた?</strong> プロジェクトに <code>workflows/</code> フォルダができた。DDWが管理する決定・タスク・ガードレールは、全部ここにマークダウンで保存される。普通のエディタで読めるし、Gitもいつも通り追跡する。
+    </div>
+  </section>
+
+  <section>
+    <h2>開発の流れ 🚀</h2>
+    <p class="lead">アイデアから出荷まで5ステップ。各ステップはスラッシュコマンド1つ。</p>
+    <div class="flow">
+
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <h4>アイデアを整える</h4>
+          <p>ふんわりしたアイデアでもOK。<code>/ddw:ideate</code> が質問してくれて、ちゃんとした企画書(PRD)に仕上がる。</p>
+        </div>
+        <div class="cmd">/ddw:ideate</div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <h4>方針を決める</h4>
+          <p>内蔵の「アーキテクト」が企画をレビューして、技術的な決定を記録する。「なんでこの方針にしたっけ?」がなくなる。</p>
+        </div>
+        <div class="cmd">/ddw:decision</div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <h4>タスクに分ける</h4>
+          <p>決定が、小さくて明確なタスクに分解される。各タスクには目標、触るファイル、完了の条件が書かれてる。</p>
+        </div>
+        <div class="cmd">/ddw:task</div>
+      </div>
+
+      <div class="step">
+        <div class="num">4</div>
+        <div class="body">
+          <h4>送り出す!</h4>
+          <p><code>/ddw:sendit</code> がタスク用の隔離されたworktreeを作って、AIが実装を始める。あなたは見守る、必要なら指示する。テストも自動。</p>
+        </div>
+        <div class="cmd">/ddw:sendit</div>
+      </div>
+
+      <div class="step">
+        <div class="num">5</div>
+        <div class="body">
+          <h4>クローズして完了</h4>
+          <p>QAが走る。あなたが最終チェック。<code>/ddw:close</code> がmainにマージして、仕様を更新して、タスクをアーカイブ。完了!</p>
+        </div>
+        <div class="cmd">/ddw:close</div>
+      </div>
+
+    </div>
+    <div class="callout">
+      <strong>迷ったとき?</strong> Claude Codeで <code>next?</code> って入力するだけ。DDWが今どこにいるかを見て、次にやることを教えてくれる。
+    </div>
+  </section>
+
+  <section>
+    <div class="auto">
+      <h3>魔法のような自動モード 🌙</h3>
+      <div class="auto-cmd">/ddw:auto</div>
+      <p>
+        タスクが溜まってる? 寝る前に <code>/ddw:auto</code> って打つだけ。
+      </p>
+      <p>
+        DDWが1つずつタスクを処理してくれる — 実装、テスト、レビュー、あなたが寝てる間に。朝起きたら作業が終わってる(人間の判断が必要な部分はキューに残る)。
+      </p>
+      <p class="small">
+        しかも、競合しないタスクは並列でこなす。
+        データベースに敏感な変更が走るときは、ちゃんと順番待ちする。
+        自分同士でぶつからない賢さ。💪
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>DDWの「ここがちがう」✨</h2>
+    <div class="problem-grid">
+      <div class="problem">
+        <div class="emoji">📜</div>
+        <h3>全部マークダウン</h3>
+        <p>独自DBなし、SaaSダッシュボードなし。決定もタスクも、リポジトリの中の <code>.md</code> ファイル。読める、diffできる、grepできる、ずっと残る。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🛡️</div>
+        <h3>ガードレール内蔵</h3>
+        <p>プロジェクトのルールを一度書けば、DDWが毎回の変更でチェック。AIがあなたの基準をスルーできない。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">📦</div>
+        <h3>1タスク1ブランチ</h3>
+        <p>巨大なブランチで混乱しない。各タスクが小さくて集中してて、レビューしやすい。トランクベース開発、ちゃんとやる版。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🔐</div>
+        <h3>Opusでセキュリティ監査</h3>
+        <p><code>/ddw:audit</code> でOWASP+STRIDEのセキュリティレビューが走る。ユニットテストが見つけられないバグも発見。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🌏</div>
+        <h3>日本語OK</h3>
+        <p>「日本語で進めて」って言うだけで切り替わる。ドキュメントもプロンプトも。設定不要。</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🆓</div>
+        <h3>無料・オープンソース</h3>
+        <p>MITライセンス。フォークOK。チームのワークフローに合わせて改造OK。ベンダーロックなし。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="try-it">
+      <h3>今すぐ試してみよう 🎯</h3>
+      <ol class="try-list">
+        <li>好きなプロジェクトでClaude Codeを開く(または新規作成 — <code>mkdir hello-ddw &amp;&amp; cd hello-ddw &amp;&amp; git init</code>)。</li>
+        <li><code>/ddw:init</code> でworkflowsフォルダをセットアップ。</li>
+        <li><code>/ddw:ideate</code> を実行して、作りたいものを伝える。ボタン1つでも、スクリプトでも、何でもOK。</li>
+        <li>そのまま流れに従う。各コマンドが次にやることを教えてくれる。</li>
+      </ol>
+      <div class="callout" style="margin-top: 32px;">
+        <strong>10分で違いを実感できる。</strong> 決めごとが消えなくなる。AIアシスタントがちゃんと役に立つ。出荷が、また楽しくなる。🚢
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer class="footer">
+  <p>AIで出荷するすべての人へ、<span class="heart">♥</span> を込めて。</p>
+  <p>DDW · MITライセンス · <a href="GUIDE.md" style="color: var(--p1);">詳しいガイドはこちら →</a> · <a href="getting-started.html" style="color: var(--p1);">English version</a></p>
+</footer>
+
+</body>
+</html>
