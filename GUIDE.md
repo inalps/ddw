@@ -127,7 +127,7 @@ For a quick overview, see [README.md](README.md).
                   └──→ abandoned (via /ddw:close --abandon)
 ```
 
-See [§13 of `enhancement.md`](enhancement.md#13-frontmatter-authority-matrix) for the full frontmatter authority matrix — every field has exactly one writer.
+Every frontmatter field has exactly one writer — task author for goals/scope, skills for status transitions and timestamps, agents for review log entries. The pattern: human declares intent, skills enforce flow, agents append findings.
 
 ## Enforcement Layer
 

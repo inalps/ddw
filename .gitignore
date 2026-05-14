@@ -6,6 +6,3 @@
 # (templates/logs/ is shipped and tracked.)
 /logs/
 /audits/
-
-# Author's working design notes — kept locally, not distributed via the plugin.
-/design-process.md
