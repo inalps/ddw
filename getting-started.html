@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meet DDW — your friendly workflow buddy</title>
+<style>
+  :root {
+    --p1: #6366f1;
+    --p2: #ec4899;
+    --p3: #f59e0b;
+    --p4: #10b981;
+    --p5: #06b6d4;
+    --ink: #1f2937;
+    --soft: #6b7280;
+    --bg: #fef7ff;
+    --card: #ffffff;
+    --line: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 17px;
+  }
+  .hero {
+    background: linear-gradient(135deg, var(--p1) 0%, var(--p2) 100%);
+    color: white;
+    padding: 80px 24px 100px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 400px;
+    height: 400px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -100px;
+    width: 350px;
+    height: 350px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+  }
+  .hero h1 {
+    font-size: 72px;
+    margin: 0 0 16px;
+    font-weight: 900;
+    letter-spacing: -2px;
+    position: relative;
+  }
+  .hero .wave {
+    font-size: 64px;
+    margin-bottom: 8px;
+    display: inline-block;
+    animation: wave 2.5s ease-in-out infinite;
+    transform-origin: 70% 70%;
+  }
+  @keyframes wave {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(20deg); }
+    40% { transform: rotate(-10deg); }
+    60% { transform: rotate(15deg); }
+    80% { transform: rotate(-5deg); }
+  }
+  .hero p.sub {
+    font-size: 24px;
+    margin: 0 0 8px;
+    font-weight: 500;
+    opacity: 0.95;
+    position: relative;
+  }
+  .hero p.tag {
+    font-size: 18px;
+    opacity: 0.85;
+    margin-top: 16px;
+    position: relative;
+    font-weight: 400;
+  }
+  .container {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  section {
+    padding: 64px 0;
+  }
+  section h2 {
+    font-size: 40px;
+    margin: 0 0 16px;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+  section .lead {
+    font-size: 20px;
+    color: var(--soft);
+    margin: 0 0 40px;
+  }
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .problem {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+    border: 2px solid transparent;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .problem:hover {
+    transform: translateY(-4px);
+    border-color: var(--p2);
+  }
+  .problem .emoji {
+    font-size: 44px;
+    margin-bottom: 12px;
+  }
+  .problem h3 {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+  .problem p {
+    color: var(--soft);
+    margin: 0;
+    font-size: 15px;
+  }
+  .solution {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-radius: 24px;
+    padding: 48px;
+    text-align: center;
+    position: relative;
+  }
+  .solution .big-emoji {
+    font-size: 80px;
+    margin-bottom: 16px;
+  }
+  .solution h3 {
+    font-size: 32px;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .solution p {
+    font-size: 19px;
+    max-width: 620px;
+    margin: 0 auto 32px;
+    color: var(--ink);
+  }
+  .powers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .power {
+    background: white;
+    padding: 24px 16px;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .power .icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+  }
+  .power strong {
+    display: block;
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  .power span {
+    font-size: 14px;
+    color: var(--soft);
+  }
+  .gates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+  }
+  .gate {
+    background: white;
+    padding: 16px 18px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    font-size: 15px;
+    border-left: 4px solid var(--p3);
+  }
+  .gate .gate-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .gate strong {
+    color: var(--ink);
+  }
+  .closing {
+    font-size: 16px;
+    color: var(--ink);
+    max-width: 620px;
+    margin: 16px auto 0;
+    opacity: 0.85;
+  }
+  .artifact {
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.08);
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 24px;
+    align-items: start;
+    border-top: 6px solid var(--p1);
+  }
+  .artifact:nth-of-type(1) { border-top-color: var(--p1); }
+  .artifact:nth-of-type(2) { border-top-color: var(--p2); }
+  .artifact:nth-of-type(3) { border-top-color: var(--p4); }
+  .artifact-icon {
+    font-size: 56px;
+    line-height: 1;
+  }
+  .artifact h3 {
+    margin: 0 0 4px;
+    font-size: 24px;
+  }
+  .artifact h3 .muted {
+    font-size: 18px;
+    color: var(--soft);
+    font-weight: 500;
+  }
+  .artifact .path {
+    display: inline-block;
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .artifact .what-the {
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0 0 8px;
+  }
+  .artifact .description {
+    color: var(--soft);
+    margin: 0 0 16px;
+    font-size: 15px;
+  }
+  .status-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--soft);
+  }
+  .status-pill {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .built-by {
+    font-size: 14px;
+    color: var(--soft);
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .built-by code {
+    background: var(--ink);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .setup-box {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-radius: 16px;
+    padding: 28px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 14px;
+    overflow-x: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    position: relative;
+  }
+  .setup-box::before {
+    content: '⚡ paste into Claude Code';
+    position: absolute;
+    top: -12px;
+    left: 24px;
+    background: var(--p3);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: -apple-system, sans-serif;
+    font-weight: 600;
+  }
+  .setup-box .prompt {
+    color: var(--p4);
+  }
+  .setup-box .comment {
+    color: #9ca3af;
+    font-style: italic;
+  }
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 20px;
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border-left: 6px solid var(--p1);
+    position: relative;
+  }
+  .step:nth-child(1) { border-left-color: var(--p1); }
+  .step:nth-child(2) { border-left-color: var(--p2); }
+  .step:nth-child(3) { border-left-color: var(--p3); }
+  .step:nth-child(4) { border-left-color: var(--p4); }
+  .step:nth-child(5) { border-left-color: var(--p5); }
+  .step .num {
+    font-size: 44px;
+    font-weight: 900;
+    color: var(--p1);
+    text-align: center;
+    line-height: 1;
+  }
+  .step:nth-child(2) .num { color: var(--p2); }
+  .step:nth-child(3) .num { color: var(--p3); }
+  .step:nth-child(4) .num { color: var(--p4); }
+  .step:nth-child(5) .num { color: var(--p5); }
+  .step .body h4 {
+    margin: 0 0 4px;
+    font-size: 20px;
+  }
+  .step .body p {
+    margin: 0;
+    color: var(--soft);
+    font-size: 15px;
+  }
+  .cmd {
+    background: var(--ink);
+    color: white;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .arrow {
+    text-align: center;
+    font-size: 28px;
+    color: var(--p2);
+  }
+  .auto {
+    background: linear-gradient(135deg, var(--p5) 0%, var(--p1) 100%);
+    color: white;
+    border-radius: 24px;
+    padding: 48px;
+    margin-top: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .auto::before {
+    content: '✨';
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    font-size: 50px;
+    opacity: 0.6;
+    animation: sparkle 3s ease-in-out infinite;
+  }
+  @keyframes sparkle {
+    0%, 100% { transform: scale(1) rotate(0); opacity: 0.6; }
+    50% { transform: scale(1.2) rotate(15deg); opacity: 1; }
+  }
+  .auto h3 {
+    font-size: 36px;
+    margin: 0 0 12px;
+  }
+  .auto .auto-cmd {
+    display: inline-block;
+    background: rgba(0,0,0,0.3);
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 18px;
+    margin: 16px 0 24px;
+    backdrop-filter: blur(10px);
+  }
+  .auto p {
+    font-size: 18px;
+    margin: 8px 0;
+    line-height: 1.7;
+  }
+  .auto .small {
+    font-size: 15px;
+    opacity: 0.85;
+    margin-top: 20px;
+  }
+  .try-it {
+    background: white;
+    border-radius: 24px;
+    padding: 48px;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
+    border: 3px dashed var(--p2);
+  }
+  .try-it h3 {
+    font-size: 32px;
+    margin: 0 0 24px;
+    text-align: center;
+  }
+  .try-list {
+    counter-reset: try;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .try-list li {
+    counter-increment: try;
+    position: relative;
+    padding: 16px 16px 16px 70px;
+    margin-bottom: 12px;
+    background: var(--bg);
+    border-radius: 12px;
+    font-size: 17px;
+  }
+  .try-list li::before {
+    content: counter(try);
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--p1), var(--p2));
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 18px;
+  }
+  .footer {
+    text-align: center;
+    padding: 60px 24px 48px;
+    color: var(--soft);
+    font-size: 15px;
+  }
+  .footer .heart {
+    color: var(--p2);
+    font-size: 20px;
+  }
+  .pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .pill {
+    background: rgba(255,255,255,0.25);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    backdrop-filter: blur(10px);
+  }
+  .callout {
+    background: #fff3cd;
+    border-left: 6px solid var(--p3);
+    padding: 20px 24px;
+    border-radius: 12px;
+    margin: 24px 0;
+    font-size: 16px;
+  }
+  .callout strong {
+    color: #92400e;
+  }
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 48px; }
+    .hero .wave { font-size: 48px; }
+    .hero p.sub { font-size: 20px; }
+    section h2 { font-size: 30px; }
+    .powers { grid-template-columns: 1fr; }
+    .gates { grid-template-columns: 1fr; }
+    .artifact { grid-template-columns: 1fr; text-align: center; }
+    .artifact .status-flow { justify-content: center; }
+    .step { grid-template-columns: 1fr; text-align: center; }
+    .step .num { font-size: 36px; margin: 0 auto; }
+    .cmd { justify-self: center; }
+    .solution, .auto, .try-it { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wave">👋</div>
+  <h1>Meet DDW</h1>
+  <p class="sub">Your friendly workflow buddy for building software with AI</p>
+  <p class="tag">Your design lives in your repo. Hard gates between every step. No bypass — by humans or AI.</p>
+  <div class="pill-row">
+    <span class="pill">Open source</span>
+    <span class="pill">Claude Code plugin</span>
+    <span class="pill">Trunk-based</span>
+    <span class="pill">Auto mode 🤖</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <section>
+    <h2>The problem 😩</h2>
+    <p class="lead">You're building something cool with AI. But things keep getting messy.</p>
+    <div class="problem-grid">
+      <div class="problem">
+        <div class="emoji">🌀</div>
+        <h3>Lost decisions</h3>
+        <p>"Wait — did we say we'd use Postgres or SQLite?" Three weeks later, nobody remembers why.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🪿</div>
+        <h3>Tangled tasks</h3>
+        <p>What's done? What's in progress? What did the AI actually change? You scroll git log and hope.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🎲</div>
+        <h3>AI goes rogue</h3>
+        <p>You asked for a small fix. The AI rewrote three files you didn't want touched.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="solution">
+      <div class="big-emoji">🔒</div>
+      <h3>The big idea: docs in your repo, gates on the way to main</h3>
+      <p>
+        Most AI tools just write code. DDW makes you write down WHAT you're building, WHY, and HOW you'll know it's done — all as plain markdown files inside your repo. Then it puts hard gates between phases. Nobody ships work that skipped a step. Not you. Not your AI helper.
+      </p>
+      <div class="gates">
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>No PRD? → <strong>No decision.</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>No decision? → <strong>No task.</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>AC failing? → <strong>No close.</strong></span>
+        </div>
+        <div class="gate">
+          <span class="gate-icon">🚧</span>
+          <span>Not closed? → <strong>No merge.</strong></span>
+        </div>
+      </div>
+      <p class="closing">
+        Six months from now, anyone reading your repo will know exactly what was decided, when, and why. That's the gold DDW protects.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Three things DDW tracks 📚</h2>
+    <p class="lead">Every project ends up with three kinds of docs in <code>workflows/</code>. Here's what each one is for.</p>
+
+    <div class="artifact">
+      <div class="artifact-icon">💭</div>
+      <div>
+        <h3>PRD <span class="muted">— Product Requirements Doc</span></h3>
+        <p class="what-the">The WHAT and the WHY.</p>
+        <span class="path">workflows/prds/PRD-{date}-{name}.md</span>
+        <p class="description">
+          What goes inside: what you want to build, why it matters, what success looks like, scope limits. Like a proposal you'd write before a big school project.
+        </p>
+        <div class="status-flow">
+          <span>Status flow:</span>
+          <span class="status-pill">draft</span>
+          <span>→</span>
+          <span class="status-pill">ready</span>
+          <span>→</span>
+          <span class="status-pill">closed</span>
+        </div>
+        <p class="built-by">Built by <code>/ddw:ideate</code> — the AI interviews you with smart questions, then writes the PRD.</p>
+      </div>
+    </div>
+
+    <div class="artifact">
+      <div class="artifact-icon">🧭</div>
+      <div>
+        <h3>Decision <span class="muted">— Architecture Decision Record (ADR)</span></h3>
+        <p class="what-the">The HOW.</p>
+        <span class="path">workflows/decisions/DEC-{date}-{name}.md</span>
+        <p class="description">
+          What goes inside: context, options considered, decision made, trade-offs, expected consequences. Like a lab notebook explaining "we tried approach A, B, and C — we picked B because…".
+        </p>
+        <div class="status-flow">
+          <span>Status flow:</span>
+          <span class="status-pill">proposed</span>
+          <span>→</span>
+          <span class="status-pill">decided</span>
+          <span>→</span>
+          <span class="status-pill">archived</span>
+        </div>
+        <p class="built-by">Built by <code>/ddw:decision</code> — the architect-AI reviews trade-offs and writes the record with you.</p>
+      </div>
+    </div>
+
+    <div class="artifact">
+      <div class="artifact-icon">✅</div>
+      <div>
+        <h3>Task <span class="muted">— Work unit with QA log</span></h3>
+        <p class="what-the">The DO.</p>
+        <span class="path">workflows/tasks/TASK-{date}-{name}.md</span>
+        <p class="description">
+          What goes inside: scope, files you'll touch, Acceptance Criteria table (each AC has a check type: code-grep, code-review, spec-compare, manual), Work Log (timestamped progress), Review Log (where <code>/ddw:qa</code> writes pass/fail/regression findings). Like a homework assignment with a checklist AND a grading rubric.
+        </p>
+        <div class="status-flow">
+          <span>Status flow:</span>
+          <span class="status-pill">planned</span>
+          <span>→</span>
+          <span class="status-pill">in_progress</span>
+          <span>→</span>
+          <span class="status-pill">review_and_bugfix</span>
+          <span>→</span>
+          <span class="status-pill">done</span>
+          <span>→</span>
+          <span class="status-pill">archived</span>
+        </div>
+        <p class="description" style="font-size: 14px; margin: -4px 0 12px;">
+          (In team-PR mode: an extra <span class="status-pill">in_review</span> state slots in between <span class="status-pill">done</span> and <span class="status-pill">archived</span> while the PR is open.)
+        </p>
+        <p class="built-by">Built by <code>/ddw:task</code>. Executed by <code>/ddw:sendit</code>. Reviewed by <code>/ddw:review</code> (which runs <code>/ddw:qa</code>). Closed by <code>/ddw:close</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Setup in 30 seconds ⚡</h2>
+    <p class="lead">Three small steps. Done before your coffee cools.</p>
+
+    <div class="flow">
+
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <h4>Clone the DDW repo</h4>
+          <p>Grab the latest DDW from GitHub and put it somewhere on your machine. Anywhere is fine — your home folder, a tools folder, wherever you keep cloned repos.</p>
+        </div>
+        <div class="cmd">git clone …</div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <h4>Start Claude Code with the plugin</h4>
+          <p>From your project folder, launch Claude Code and point it at the DDW folder you just cloned.</p>
+          <div class="setup-box" style="margin-top: 14px;">
+<span class="prompt">$</span> claude --plugin-dir <span style="color: var(--p3);">/path/to/ddw</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <h4>Bootstrap DDW into your project</h4>
+          <p>Inside Claude Code, run the init command. DDW will create a <code>workflows/</code> folder for your decisions, tasks, and rules.</p>
+        </div>
+        <div class="cmd">/ddw:init</div>
+      </div>
+
+    </div>
+
+    <div class="callout">
+      <strong>What just happened:</strong> Your project now has a <code>workflows/</code> folder. Everything DDW tracks — decisions, tasks, guardrails — lives there as plain markdown. You can read it with any editor. Git tracks it like normal code.
+    </div>
+  </section>
+
+  <section>
+    <h2>The flow 🚀</h2>
+    <p class="lead">Five steps from idea to shipped. Each step is one slash command.</p>
+    <div class="flow">
+
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <h4>Have an idea? Shape it.</h4>
+          <p>Got a rough idea? <code>/ddw:ideate</code> asks you smart questions until it becomes a clear plan (a PRD).</p>
+        </div>
+        <div class="cmd">/ddw:ideate</div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <h4>Make the call.</h4>
+          <p>A built-in "architect" reviews your plan and writes down the technical decision. No more "wait, why did we choose that?"</p>
+        </div>
+        <div class="cmd">/ddw:decision</div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <h4>Break it into tasks.</h4>
+          <p>The decision becomes small, focused tasks. Each task has a goal, files to touch, and how to know it's done.</p>
+        </div>
+        <div class="cmd">/ddw:task</div>
+      </div>
+
+      <div class="step">
+        <div class="num">4</div>
+        <div class="body">
+          <h4>Ship it!</h4>
+          <p><code>/ddw:sendit</code> creates an isolated workspace for the task and the AI starts building. You watch. You guide. Tests get run automatically.</p>
+        </div>
+        <div class="cmd">/ddw:sendit</div>
+      </div>
+
+      <div class="step">
+        <div class="num">5</div>
+        <div class="body">
+          <h4>Close the loop.</h4>
+          <p>QA runs. You check the work. <code>/ddw:close</code> merges to main, updates the spec, archives the task. Done!</p>
+        </div>
+        <div class="cmd">/ddw:close</div>
+      </div>
+
+    </div>
+    <div class="callout">
+      <strong>Stuck somewhere?</strong> Just type <code>next?</code> in Claude Code. DDW will look at where you are and tell you what to do.
+    </div>
+  </section>
+
+  <section>
+    <div class="auto">
+      <h3>The magic: Auto mode 🌙</h3>
+      <div class="auto-cmd">/ddw:auto</div>
+      <p>
+        Got a stack of tasks lined up? Type <code>/ddw:auto</code> before bed.
+      </p>
+      <p>
+        DDW will work through them one by one — implementing, testing, reviewing — while you sleep. When you wake up, the work is done (or queued for your input if something needed a human call).
+      </p>
+      <p class="small">
+        It even runs tasks in parallel when they don't conflict.
+        If a task needs the database in a sensitive way, DDW knows to wait its turn.
+        Smart enough not to crash into itself. 💪
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What makes DDW different ✨</h2>
+    <div class="problem-grid">
+      <div class="problem">
+        <div class="emoji">📜</div>
+        <h3>Plain markdown, all the way</h3>
+        <p>No proprietary DB, no SaaS dashboard. Your decisions and tasks are <code>.md</code> files in your repo — readable, diffable, greppable, forever.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🛡️</div>
+        <h3>Guardrails built-in</h3>
+        <p>You write your project's rules once. DDW checks every change against them. AI can't sneak past your standards.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">📦</div>
+        <h3>One task, one branch</h3>
+        <p>No tangled mega-branches. Each task is small, focused, and easy to review. Trunk-based development, done right.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🔐</div>
+        <h3>Security audit on Opus</h3>
+        <p>Run <code>/ddw:audit</code> for an OWASP+STRIDE security review. Finds the bugs unit tests miss.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🌏</div>
+        <h3>English or 日本語</h3>
+        <p>Just say "日本語で" and DDW switches. Docs and prompts both. No setup needed.</p>
+      </div>
+      <div class="problem">
+        <div class="emoji">🆓</div>
+        <h3>Free + open source</h3>
+        <p>MIT license. Fork it. Bend it to your team's workflow. No vendor lock-in.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="try-it">
+      <h3>Try it right now 🎯</h3>
+      <ol class="try-list">
+        <li>Open Claude Code in any project (or make a new one — <code>mkdir hello-ddw &amp;&amp; cd hello-ddw &amp;&amp; git init</code>).</li>
+        <li>Run <code>/ddw:init</code> to set up the workflows folder.</li>
+        <li>Run <code>/ddw:ideate</code> and tell it about something you want to build. Even something tiny — a button, a script, a feature.</li>
+        <li>Follow where it leads. Each command tells you what to type next.</li>
+      </ol>
+      <div class="callout" style="margin-top: 32px;">
+        <strong>You'll feel the difference within 10 minutes.</strong> Your decisions stop slipping away. Your AI helper actually helps. Shipping feels good again. 🚢
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer class="footer">
+  <p>Built with <span class="heart">♥</span> for everyone who ships software with AI.</p>
+  <p>DDW · MIT License · <a href="GUIDE.md" style="color: var(--p1);">Read the full guide →</a> · <a href="getting-started.ja.html" style="color: var(--p1);">日本語版</a></p>
+</footer>
+
+</body>
+</html>

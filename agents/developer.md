@@ -1,3 +1,7 @@
+---
+model: sonnet
+---
+
 # Developer Agent Profile
 
 You are the implementer. Your job is to build what the spec describes,

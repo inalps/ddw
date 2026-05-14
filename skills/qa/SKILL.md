@@ -8,6 +8,24 @@ disable-model-invocation: false
 
 Run automated QA for a task. Task: $ARGUMENTS (if not provided, ask the user which task).
 
+## Invocation Modes
+
+This skill runs in two modes:
+
+**Standalone mode** (user runs `/ddw:qa` directly):
+- Gathers all context itself (steps 0-6).
+- Appends QA summary to the task's Review Log (step 12).
+
+**Subagent mode** (spawned by `/ddw:review` via the Agent tool):
+- All context (QA profile, task excerpts, spec, decision, invariants, guardrails) is already embedded in the prompt via XML tags.
+- Skip steps 0-6. Begin directly at step 7 (Pass 1: Acceptance Criteria).
+- Do NOT append to the Review Log (step 12) — the calling review skill handles that.
+- Output ONLY the QA Report (steps 9-11).
+
+**How to detect mode:** If the prompt contains `<qa-profile>` and `<task>` XML tags with embedded content, you are in subagent mode. Otherwise, you are in standalone mode.
+
+---
+
 0. **Read voice** — read `{workflowDir}/VOICE.md` (if it exists) and follow its communication style for all output during this skill.
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` and `specPath`.
@@ -22,12 +40,20 @@ Run automated QA for a task. Task: $ARGUMENTS (if not provided, ask the user whi
    - `## Acceptance Criteria` table (task-specific checks)
    - `## Goal` and `## Scope` (for context only — don't let developer framing bias evaluation)
    - Do NOT read `## Context Packing` or `## Implementation Summary`
+   - Extract the `**Decision:**` field from the task header — needed for spec delta in step 5.5.
 
-4. **Read project invariants** at `{workflowDir}/guardrails/INVARIANTS.md`.
+4. **Read project invariants** — read `{workflowDir}/guardrails/INVARIANTS.md` fully. These are compact, machine-testable rules and every one must be checked in Pass 2.
+
+4.5. **Read guardrails (tiered)** — read `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists): scan headings and rule names first, then read only sections relevant to the task's scope and AC checks.
 
 5. **Read the codebase** — read the main code file(s) relevant to the task.
 
-6. **Read the spec** — read the file at `specPath` from ddw.json (if configured).
+5.5. **Read the linked decision** — read the task's `**Decision:**` field. If it references a decision (not "none"), read `{workflowDir}/decisions/{decision-id}.md`. This is the **spec delta** — it describes intended new behavior that may override CURRENT_SPEC.md.
+
+6. **Read the spec (tiered)** — if `specPath` is configured in ddw.json: this is the **baseline** behavior contract (CURRENT_SPEC.md). Where the linked decision (step 5.5) conflicts with the spec, the decision wins — that's the intended new behavior.
+   - Read headings/section structure first.
+   - Read only sections referenced by AC checks (spec-compare type) or relevant to the task's scope.
+   - Skip unrelated domain areas.
 
 7. **Pass 1: Acceptance Criteria** — execute each check in the AC table:
 
@@ -84,7 +110,7 @@ Run automated QA for a task. Task: $ARGUMENTS (if not provided, ask the user whi
 
 11. **If CLEAR**: list any remaining manual checks (SKIP items) for the owner to verify.
 
-12. **Append summary** to the task's `## Review Log` section:
+12. **Append summary** (standalone mode only — skip in subagent mode) to the task's `## Review Log` section:
     ```
     #### QA Run — {UTC datetime}
     Verdict: CLEAR/BLOCKED

@@ -1,7 +1,7 @@
 {
   "name": "ddw",
   "description": "Decision-Driven Workflow — no decision, no code. Enforces structured dev with decisions, tasks, QA, and drift prevention for Claude Code.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Inalps"
   }

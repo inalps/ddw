@@ -23,3 +23,8 @@ fi
 
 # Read workflowDir from config (in case it differs from the directory where ddw.json was found)
 DDW_WORKFLOW_DIR=$(python3 -c "import json; print(json.load(open('$DDW_CONFIG_FILE')).get('workflowDir','workflows'))" 2>/dev/null || echo "workflows")
+
+# Read worktree.taskDir template if configured (e.g. ".worktrees/{TASK_NAME}").
+# Empty when worktree feature is disabled — downstream hooks treat empty as
+# "no enforcement" so legacy projects without worktree configs aren't gated.
+DDW_WORKTREE_TASKDIR=$(python3 -c "import json; c=json.load(open('$DDW_CONFIG_FILE')); wt=c.get('worktree') or {}; print(wt.get('taskDir',''))" 2>/dev/null || echo "")

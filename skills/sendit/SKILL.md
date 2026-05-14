@@ -12,7 +12,7 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
 1. **Read config** — read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy) to get `workflowDir` (default: `workflows`). Resolve user identity by running `git config user.name || whoami`.
 
-1.5. **Sync TASK_LOG** — Sync `{workflowDir}/logs/TASK_LOG.md` from all `TASK-*.md` files in both `{workflowDir}/tasks/` and `tasks/archive/`. Extract Owner, Status, Date, last Work Log timestamp. Add missing rows and update existing rows. **Never delete rows** — logs are a permanent record.
+1.5. **Logs are derived views.** Do not sync inline — `ddw-index` is the canonical generator. The owner runs `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` (or via pre-commit hook) to refresh. Skill steps below reference data from source files, never from `logs/`.
 
 2. **Find the task:**
    - If $ARGUMENTS names a task, use that.
@@ -21,12 +21,29 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
 3. **Verify the linked decision is `decided`** — read the task's `**Decision:**` field. If it references a decision, confirm its status is `decided`. If not, block and explain.
 
-4. **Check for session handoff** — read the task's `## Session Handoff` section.
-   - If it contains handoff content (not just the template placeholder):
-     - Display a summary: "Resuming from previous session — {completed summary}. Next up: {next actions}."
-     - If there are blockers listed, flag them.
-     - Clear the handoff section content (leave the heading and placeholder comment).
-   - If empty or placeholder only, skip this step.
+4. **Check for session handoff** — read the task's `## Session Handoff` section. Parse the structured fields:
+   - `**Status:**` — in_progress, blocked, or none
+   - `**Completed ACs:**` — list of AC IDs already passed
+   - `**Remaining ACs:**` — list of AC IDs still to do
+   - `**Files touched:**` — files modified so far
+   - `**Blockers:**` — any blockers or "none"
+   - `**Next action:**` — what to do next
+   - `**Context:**` — non-obvious state (e.g., "tried approach X, failed because Y")
+
+   If Status is not "none" (handoff has content):
+   - Display a structured resume summary:
+     ```
+     Resuming from previous session:
+     ✅ Completed: {Completed ACs}
+     🔲 Remaining: {Remaining ACs}
+     📁 Files touched: {files list}
+     ➡️  Next: {Next action}
+     ```
+   - If Blockers is not "none", flag prominently: "⚠️ Blockers: {blockers}"
+   - If Context has content, display as advisory: "💡 Context: {context}"
+   - Clear the handoff section — reset all fields to template defaults (Status: none, lists: [], others: empty).
+
+   If Status is "none" or all fields are empty/placeholder, skip this step.
 
 5. **Load developer profile** — read the `agents/developer.md` bundled with the DDW plugin (plugin root, not project directory). Adopt its mindset for implementation:
    - Spec-first: read all docs before coding
@@ -48,15 +65,28 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
      Status → in_progress. Sending it! (Owner: {resolved identity})
      ```
 
-7.5. **Create feature branch** (git only — skip if not a git repo):
+7.5. **Set up task worktree** (git only — skip if not a git repo):
    - Check: `git rev-parse --git-dir 2>/dev/null`. If not a git repo, skip this step.
    - Branch name: `task/{task-id}` (e.g., `task/TASK-20260331-auth-middleware`)
-   - If already on this branch: continue (resuming work)
-   - If branch exists but not checked out: `git checkout task/{task-id}`
-   - If branch doesn't exist: `git checkout -b task/{task-id}`
-   - If not on main/master when creating a new branch: warn "You're on branch '{current}'. Feature branches are normally created from main." but allow.
+   - **Detect current worktree**: run `git rev-parse --show-toplevel` and compare to the resolved `worktree.taskDir` template substituted with `{task-id}`. If they match, the user is already in this task's worktree → continue (resuming work), no further action.
+   - **Small fix exception.** If the task scope clearly indicates a small fix (1–2 files in the `## Files` section, no schema/migration changes, no dependencies, completes in <30 min), the worktree overhead may exceed the benefit. In that case use a plain branch in the main working tree (the fallback path below): `git checkout -b task/{task-id}`. Worktree is still preferred when (a) the main tree currently has uncommitted work, (b) you need to keep dev servers running on default ports during the fix, or (c) you may run this task in parallel with another. When in doubt, use the worktree — its overhead is small compared to recovering from a forgotten in-progress state in the main tree.
+   - **Resolve base branch.** Before invoking setup-worktree.sh, decide which branch the new worktree should start from. Precedence (highest first):
+     1. If the task file has an optional `**Base-Branch:** <name>` field (or `Base-Branch: <name>` in frontmatter), use that.
+     2. If the user explicitly mentioned a base branch in their request to start the task (e.g., "start TASK-X from `develop`"), use that.
+     3. If `**Base:** TASK-<id>` is set in the task file, use `--base TASK-<id>` (stacked-task semantics).
+     4. Otherwise, no flag — setup-worktree.sh defaults to `ddw.json` `merge.baseBranch` or `"main"`.
+   - **If `ddw.json.worktree` is configured** (default for new init): invoke `bash ${CLAUDE_PLUGIN_DIR}/scripts/setup-worktree.sh {task-id} --root ${workflowRoot} [--base-branch <name>] [--base TASK-<id>]`. This creates `.worktrees/{task-id}/` on a fresh `task/{task-id}` branch from the resolved base, writes `PORT_OFFSET` to `.env.ddw`, symlinks `worktree.syncFiles`, and runs `commands.install` if needed. The script refuses if the branch already exists, `maxConcurrent` is reached, or the base branch doesn't exist — surface its error and stop.
+   - **After creation**, all subsequent edits in this skill (and during implementation) MUST use absolute paths inside the new worktree directory. Tell the user once: "Worktree ready at `.worktrees/{task-id}/`. `cd` there in your terminal if you want to run dev/test commands locally — Claude will operate inside it via absolute paths."
+   - **Fallback (no `worktree` config)**: plain branch checkout in current working tree. If branch exists but not checked out: `git checkout task/{task-id}`. If branch doesn't exist: `git checkout -b task/{task-id}`. If not on main/master when creating, warn but allow.
 
-8. **Read guardrails** at `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists).
+8. **Read guardrails (tiered):**
+   - Read `{workflowDir}/guardrails/GUARDRAILS.md` (if it exists): scan headings and rule names first, then read only sections relevant to this task's scope and files.
+   - Read `{workflowDir}/guardrails/INVARIANTS.md` fully — these are compact, machine-testable rules and must all be respected during implementation.
+
+8.5. **Read spec (tiered)** — if `specPath` is configured in ddw.json:
+   - Read headings/section names from the spec first.
+   - Read only sections relevant to this task's scope and affected files.
+   - Skip unrelated domain areas — they waste context without aiding implementation.
 
 9. **Read the task** — Scope, Constraints, Files, Completion Criteria sections.
 
@@ -71,7 +101,11 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
     Chalk up, no looking down — let's climb.
     ```
 
-11. **Begin implementation** — start working on the task scope immediately.
+11. **Begin implementation** — start working on the task scope. `/ddw:sendit` itself is the explicit go signal; do not pause for an additional owner confirmation.
+
+    **Multi-file work → dispatch to a subagent.** If the task touches more than ~2 files of code (mechanical refactors, ports, cross-file fanouts), the **first** action after the send-it message is to spawn a subagent with the task ID, the worktree path, and a tight pointer to the task file. Pass enough context that the subagent can read scope/AC/files for itself. Use `model: "sonnet"` (from `agents/developer.md`) when invoking the Agent tool. Main thread keeps: monitoring the subagent, course-correcting on owner feedback, running the auto-review at step 13.
+
+    Single-file or one-shot edits can stay in the main thread.
 
 12. **Write tests** — after implementation, before review:
     - Write **unit tests** for every new or changed function — verify individual logic in isolation.
@@ -101,4 +135,14 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
    4. If no changes are needed, skip silently. Only log to the Work Log when files are created or updated: `Refreshed .gitignore` / `Created .dockerignore` / etc.
 
-13. **Auto-review** — when implementation and tests are complete, immediately run `/ddw:review` logic against this task. Do not wait for the user to trigger it. The owner should receive a fully reviewed task, not a half-finished handoff.
+12.6. **Companion-test gate** — after step 12's tests are written and pass (or after determining no tests are applicable), enforce this gate before auto-review:
+   1. Read `ddw.json.testFilePattern`. If absent, fall back to common patterns: `*.test.ts`, `*.test.js`, `*_test.py`, `*_test.go`, `*_test.rs`.
+   2. Glob for test files matching the pattern in directories that contain files modified during this task. Use the task's `## Files` section and `## Tests` section as the source of modified directories.
+   3. If ≥1 test file exists matching the pattern → proceed to step 13.
+   4. If 0 test files match → check the task file for a `**No-Test-Justification:**` field:
+      - Present and non-empty → append to Work Log: "Sendit gate: no test, justified — {reason}" and proceed to step 13.
+      - Absent or empty → **BLOCK** with: "No companion test detected matching `{testFilePattern}`. Either (a) add a test, or (b) add `**No-Test-Justification:** <reason>` to the task file frontmatter, then re-run /ddw:sendit."
+
+13. **Auto-review** — when implementation and tests are complete, immediately run `/ddw:review` logic against this task. Do not wait for the user to trigger it. The owner should receive a fully reviewed task, not a half-finished handoff. After `/ddw:review` runs it sets `**Status:** review_and_bugfix` (or leaves the task at its current status if open blockers remain). The owner — or `/ddw:auto`'s advance-review row — flips `review_and_bugfix → done` once the review is clear, and `/ddw:close` handles rebase + merge. No queue tick, no integration staging.
+
+**Final note:** logs (`TASK_LOG.md`, `DECISION_LOG.md`, `RETRO_LOG.md`, `PRD_LOG.md`) are derived views. Run `node ${CLAUDE_PLUGIN_DIR}/scripts/ddw-index.mjs` to refresh, or rely on a pre-commit hook if configured.

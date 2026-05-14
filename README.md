@@ -31,12 +31,16 @@ It's a **development harness that enforces quality at the system level.**
 
 ## The Flow
 
-Decision → Task → Implement → QA → Close
+Decision → Task → Implement → QA → Integrate → Close
 
 Or full power:
 
 ```
-/ddw:ideate → /ddw:decision → /ddw:task → /ddw:sendit → /ddw:review → /ddw:close
+/ddw:ideate → /ddw:decision → /ddw:task → /ddw:sendit → /ddw:review
+                                                            ↓
+                                                       /ddw:close
+                                                            ↓
+                                                     /ddw:prd close
 ```
 
 ---
@@ -91,19 +95,28 @@ Then run `/ddw:init`.
 
 ## Commands
 
+Everything is a slash command. The bash scripts under `scripts/` are implementation details — skills wrap them.
+
 | Command | Purpose |
 |---|---|
 | `/ddw:init` | Bootstrap DDW into a project |
 | `/ddw:ideate` | Shape rough ideas into a PRD |
 | `/ddw:decision` | Create decision with architect review |
+| `/ddw:prd close PRD-id` | Close a PRD once its decisions exist |
 | `/ddw:task` | Break decision into scoped tasks |
-| `/ddw:sendit` | Start implementation on feature branch |
+| `/ddw:sendit` | Auto-creates a per-task worktree, implements, runs review |
 | `/ddw:qa` | Automated QA: acceptance criteria + invariants |
 | `/ddw:review` | QA + tests + owner checklist |
-| `/ddw:close` | Spec update, drift check, retro, archive |
+| `/ddw:pr` | (team-PR mode) Push branch, open GitHub PR, transition task to in_review |
+| `/ddw:audit` | Adversarial security audit (OWASP+STRIDE) on Opus. Standalone. |
+| `/ddw:close` | Spec update, drift, retro, archive, **remove worktree** |
+| `/ddw:sync-spec` | Update CURRENT_SPEC.md after a spec-affecting task lands (post-merge). Auto-invoked from `/ddw:close` when relevant. |
 | `/ddw:drift` | Check spec-code consistency |
 | `/ddw:architect` | Design review or bootstrap constraints |
 | `/ddw:upgrade` | Upgrade project to latest plugin version |
+| `/ddw:auto` | Overnight orchestrator. Loops the pipeline autonomously; logs blockers to morning inbox |
+
+In the happy path you only ever need: `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:close` (local mode) or `/ddw:decision` → `/ddw:task` → `/ddw:sendit` → `/ddw:pr` → `/ddw:close` (team-PR mode, when `merge.mode: "github-pr"`). The worktree creation and teardown happen automatically.
 
 ---
 
@@ -112,8 +125,8 @@ Then run `/ddw:init`.
 - **Run `/clear` after each task**
   Context builds up and slows things down. Fresh start = fast start.
 
-- **Working on multiple tasks? Use `git worktree`**
-  Or just tell the AI "work on these in parallel" — it'll figure it out.
+- **Multitask, no fiddling**
+  `/ddw:sendit` creates an isolated worktree per task automatically — port offset (`.env.ddw`), symlinked `.env*`, fresh `task/TASK-id` branch. `/ddw:close` removes the worktree when the task ships. `maxConcurrent` in `ddw.json` caps how many you can run in parallel.
 
 - **Don't overthink Git early on**
   Manual is fine. When it gets tedious, let the AI handle it.

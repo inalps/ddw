@@ -1,0 +1,50 @@
+# DDW Spec Sync — periodic CURRENT_SPEC refresh via Claude
+#
+# Copy to your project's .github/workflows/ddw-spec-sync.yml
+# Set ANTHROPIC_API_KEY in repo Settings → Secrets → Actions
+#
+# Runs weekly (Monday 2am UTC) and on manual dispatch.
+# Commits spec changes directly to main with [skip ci] to avoid
+# triggering the test suite for a documentation-only change.
+
+name: DDW Spec Sync
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # weekly, Monday 2am UTC
+  workflow_dispatch:        # manual trigger from GitHub Actions UI
+
+jobs:
+  sync-spec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to push the spec update commit
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0    # full history so git log is available to the skill
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run sync-spec
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_PLUGIN_DIR: ${{ github.workspace }}   # DDW plugin is in the same repo
+        run: |
+          claude --print --dangerouslySkipPermissions "/ddw:sync-spec --full"
+
+      - name: Commit spec update
+        run: |
+          git config user.name  "ddw-spec-bot"
+          git config user.email "ddw-spec-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No spec changes — already up to date."
+          else
+            git commit -m "spec: weekly sync [skip ci]"
+            git push origin main
+          fi

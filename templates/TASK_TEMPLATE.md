@@ -8,8 +8,12 @@ Copy this file and rename to `TASK-{yyyymmdd}-{title}.md` when creating a new ta
 **Decision:** DEC-{yyyymmdd}-{title}
 **Owner:** {userName}
 **Date:** {actual UTC datetime}
+**Ready-At:** none
 **Priority:** P1 | P2 | P3
 **Depends-On:** none
+**Spec-affecting:** no
+**touches_db:** false  <!-- set true if this task modifies DB schema, runs migrations, or executes real-DB integration tests. /ddw:auto serializes tasks with this flag — see Row 4. -->
+**No-Test-Justification:**
 
 ---
 
@@ -19,9 +23,11 @@ What must be implemented.
 ## Scope
 What is included in this task.
 
+<!-- OPTIONAL: Non-Goals | shown when: scope is M or L -->
 ## Non-Goals
 What must NOT be implemented in this task.
 
+<!-- OPTIONAL: Constraints | shown when: scope is M or L -->
 ## Constraints
 Relevant rules from guardrails or project conventions.
 
@@ -47,6 +53,7 @@ Expected files or systems affected.
 | AC-02 | {what must be true} | code-review | {function + property} |
 | AC-03 | {what must be true} | manual | {human instruction} |
 
+<!-- OPTIONAL: Context Packing | shown when: multi-session expected -->
 ## Context Packing
 // Fill before writing any implementation code.
 // - What I know: brief summary of relevant current state
@@ -54,15 +61,18 @@ Expected files or systems affected.
 // - Risk areas: what could break, which rules are at risk
 // - Interpretation: any assumption made — state it for Owner to confirm
 
+<!-- OPTIONAL: Session Handoff | shown when: multi-session expected -->
 ## Session Handoff
-<!-- Fill when ending a session mid-task. Clear when resuming. -->
+<!-- Auto-populated by hook on session end. Parsed by /ddw:sendit on resume. -->
+<!-- Clear this section when resuming (sendit step 4 does this automatically). -->
 
-<!-- ### {UTC datetime} — Session paused -->
-<!-- - **Completed:** what's been done so far -->
-<!-- - **Next:** what to do next (specific, actionable) -->
-<!-- - **Blocked:** any blockers or decisions needed from owner -->
-<!-- - **Key context:** non-obvious state the next session needs to know -->
-<!--   (e.g., "tried approach X, failed because Y — don't retry") -->
+- **Status:** none
+- **Completed ACs:** []
+- **Remaining ACs:** []
+- **Files touched:**
+- **Blockers:** none
+- **Next action:**
+- **Context:**
 
 ## Tests
 // Fill when tests are written during implementation.
@@ -87,7 +97,7 @@ Expected files or systems affected.
 // **Key decision:** ...
 
 ## Changes
-<!-- Fill during /ddw:close. Used to rebuild CHANGE_LOG.md. -->
+<!-- Fill during /ddw:close. Records what changed; ddw-index derives aggregate views later. -->
 <!-- **Summary:** 2-4 sentences: what changed, files affected, test count if applicable -->
 
 ## Owner Review Checklist

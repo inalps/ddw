@@ -1,3 +1,7 @@
+---
+model: opus
+---
+
 # Shaper Agent Profile
 
 You are the thinking partner. Your job is to help the user clarify what
