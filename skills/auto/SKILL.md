@@ -17,6 +17,7 @@ The owner has gone to bed. Your job: work through as many tasks as possible with
 - Make architectural decisions. Decisions still in `proposed` stay that way — they go to the morning inbox.
 - Reimplement any existing skill. You dispatch them via subagents using the Agent tool.
 - Launch two `touches_db: true` tasks in parallel — these are serialized regardless of `maxConcurrent`. See Row 4 in step 5.3.
+- **Dispatch ANY task without explicit scope.** Before the main loop runs, the skill requires the owner to confirm exactly which tasks it may operate on — either via `--scope` arg or via an AskUserQuestion prompt that lists every candidate. There is no "scan and ship whatever's planned" mode. See step 4.5.
 
 ## Prerequisite: bypass permissions for overnight runs
 
@@ -42,6 +43,7 @@ Read `{workflowDir}/VOICE.md` (if it exists) and follow its communication style 
 - `--budget tasks=N,minutes=M` (defaults: 20 tasks, 480 minutes)
 - `--level self-driving|co-pilot|advisor` (default: read from `ddw.json.auto.level`, fallback `self-driving`)
 - `--dry-run` (default: false)
+- `--scope tasks=TASK-id,TASK-id,...[;decisions=DEC-id,DEC-id,...]` — restrict the run to these IDs only. Tasks outside the list are ignored by step 5.2 even if `planned` / `review_and_bugfix` / `done`. If `--scope` is provided, **step 4.5 confirmation is skipped** — the owner already declared scope explicitly. Special value `--scope all` means "scan-time set: every workable candidate found by step 5.2"; this still requires that the owner typed `all` themselves (not assumed).
 
 Read `{workflowDir}/ddw.json` (search `workflows/ddw.json`, `.workflows/ddw.json`, then `.claude/ddw.json` for legacy). Resolve:
 
@@ -100,7 +102,7 @@ If `--dry-run`: print to user once: `"DRY RUN — no files will be modified, no 
    - If the user explicitly told auto to pick up those tasks (their IDs appear in the `$ARGUMENTS` parsed in step 1), keep the markers — auto's autonomy gate will handle them per `auto.confirm_on`. The markers are removed when those tasks transition out of `in_progress`.
    - If the markers reference tasks NOT mentioned in arguments, log to inbox under "Stuck" with reason `"awaiting-go marker present from prior session — owner intent unclear"` and skip those tasks for this run.
 
-Write `{workflowDir}/.ddw/logs/auto/{run-id}/run.json`:
+Write `{workflowDir}/.ddw/logs/auto/{run-id}/run.json` (step 4.5 will append the `scope` field once the confirmation gate completes):
 ```json
 {
   "run_id": "{run-id}",
@@ -145,6 +147,47 @@ Maintain in-memory state for this run:
 - `smoke_retry_count` (map of TASK-id → count)
 - `inflight_tasks` (set of TASK-ids currently being processed)
 - `inbox_sections` (in-memory accumulator for shipped, browser_verify, decisions_pending, stuck, hard_errors)
+
+## 4.5 Confirm scope with owner — BLOCKING gate before any dispatch
+
+Before entering the main loop, the skill MUST establish the set of TASK IDs (and optionally DEC IDs for Row 5) it is allowed to operate on. There are exactly three ways to satisfy this gate:
+
+1. **`--scope tasks=...` arg was provided** in step 1. Parse it into a set `scope.tasks` (and `scope.decisions` if the optional `;decisions=...` segment was given). No prompt. Proceed to step 5.
+2. **`--scope all` was provided.** Run step 5.2's scan once now (before the loop). Build the candidate list. Set `scope.tasks` to every task ID that appears in any row's candidate set. Set `scope.decisions` similarly for Row 5/6. No prompt — the owner already typed `all` themselves. Proceed to step 5.
+3. **No `--scope` arg.** Skip if `--dry-run` (no dispatch happens anyway) or `level == advisor` (one-pass plan dump, no dispatch). Otherwise, **prompt the owner via AskUserQuestion**. See "Confirmation prompt" below.
+
+**Confirmation prompt** (mandatory when none of the above paths short-circuit):
+
+1. Run step 5.2 once to scan the pipeline. Build the candidate list per the row table in 5.3 — every task or DEC that would be touched by an active row at this autonomy level. Each candidate is a tuple `{id, row, action}`, e.g., `{TASK-X, Row 4, sendit}`.
+2. If the candidate list is empty: print "No workable items in pipeline. Exiting." Skip to step 6 with `exit_reason: "queue empty before confirmation"`.
+3. Present an AskUserQuestion with the candidate list rendered inline in the question text. Options:
+   - "Yes — all of these" (default)
+   - "Subset — I'll specify"
+   - "Cancel"
+4. **If "Yes — all of these"**: set `scope.tasks` and `scope.decisions` to every ID in the candidate list. Proceed.
+5. **If "Subset — I'll specify"**: ask a follow-up AskUserQuestion. Because that tool caps options at 4, render the candidates in the question text and rely on the auto-provided "Other" option for free-form input. Instruct the owner to type a comma-separated list of TASK / DEC IDs. Parse the response; reject silently any IDs not in the candidate list (defensive); set `scope` to the parsed intersection. If the resulting scope is empty: print "Empty scope after filtering. Exiting." and skip to step 6 with `exit_reason: "scope-filter-empty"`.
+6. **If "Cancel"**: remove the `AUTO_RUN_ACTIVE` marker (step 6.2 logic), then exit with `exit_reason: "scope-confirmation-cancelled"`. Do NOT write the inbox — nothing happened.
+
+**Persist scope to run.json.** After scope is established, rewrite `run.json` adding a top-level `scope` field:
+```json
+"scope": {
+  "tasks": ["TASK-X", "TASK-Y"],
+  "decisions": ["DEC-Z"],
+  "source": "arg" | "all-flag" | "prompt-all" | "prompt-subset"
+}
+```
+
+The main loop honors scope as a hard filter:
+- **Step 5.2** must exclude any task whose ID is not in `scope.tasks` and any DEC whose ID is not in `scope.decisions` (Row 5/6 only).
+- **Row 5 task-creation** dispatches: only fire if the parent DEC is in `scope.decisions`. Newly-created TASK files from Row 5 are **not** automatically added to `scope.tasks` — they wait for the next run.
+- **Row 6 proposed-decision logging**: only log DECs in `scope.decisions` (or, if `scope.decisions` is empty, log nothing). Keeps the inbox focused.
+
+**Why a single up-front confirmation, not per-task gates:**
+- The owner is typically asleep during the unattended loop; mid-loop prompts would stall forever.
+- Per-task confirmation also defeats parallelism (subagents are blocking on AskUserQuestion).
+- One up-front scope declaration matches how the owner thinks: "tonight, work on these N specific tasks." Anything else surfaces in the morning inbox under "Decisions waiting" or "Stuck."
+
+**This step has no auto-skip for self-driving.** Even at the highest autonomy level, scope must be declared. `self-driving` describes the loop's behavior on tasks it IS allowed to touch; it does not authorize scope expansion.
 
 ## 5. Main loop — repeat steps 5.1–5.10 until exit
 
@@ -193,6 +236,12 @@ Read frontmatter / minimal sections only.
 **Decisions:** glob `{workflowDir}/{paths.decisions}/DEC-*.md`. For each, parse `status:` and `id:` fields.
 
 Build sets keyed by status. Exclude any task in `inflight_tasks`.
+
+**Apply scope filter from step 4.5.** After all parsing is done:
+- Discard any task whose ID is not in `scope.tasks`.
+- Discard any decision whose ID is not in `scope.decisions`.
+
+Exception: the **first** invocation of step 5.2 from step 4.5 (used to build the candidate list for the confirmation prompt) runs WITHOUT this filter — the filter doesn't exist yet at that moment. Every subsequent invocation from inside the main loop applies the filter.
 
 ### 5.3 Pick the next action
 
@@ -549,7 +598,7 @@ If `--dry-run`: replace "Auto run complete" with "Dry run complete — no change
 
 ## Reference: Never-wait conditions
 
-If any of these arise, log to inbox and move on. Never block on a prompt:
+If any of these arise during the main loop, log to inbox and move on. Never block on a prompt:
 
 - Architectural ambiguity (subagent reports `stopped-for-human` with architecture reason)
 - Destructive operation detected by autonomy gate (step 5.4) or by subagent
@@ -559,6 +608,8 @@ If any of these arise, log to inbox and move on. Never block on a prompt:
 - Subagent exceeded `subagentTimeoutMinutes`
 - Subagent report file missing → hard error
 - `commands.test` red on a Row 1 or Row 2 verification
+
+**Exception — the scope confirmation in step 4.5 IS a blocking prompt.** It runs before the main loop, while the owner is still awake declaring scope for the run. Once scope is set and the loop starts, the never-wait rules above apply normally.
 
 ## Reference: Frontmatter writes
 
