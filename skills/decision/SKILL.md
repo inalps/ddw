@@ -31,7 +31,7 @@ Create a new decision file using the Decision-Driven Workflow.
 3. **Ask the user** (via AskUserQuestion) for the following if not already provided in $ARGUMENTS or by From-PRD mode:
    - **Title** (short, descriptive — becomes the filename slug, e.g. `push-semantics`)
    - **Summary** (what is being decided and why — can be a rough draft)
-   - **Milestone** (which milestone this belongs to — optional at proposed stage; check `{workflowDir}/MILESTONES.md` for existing milestones)
+   - **Milestone** (which milestone this belongs to — optional at proposed stage). Read `{workflowDir}/MILESTONES.md` and present **only currently-open milestones** (headings whose line does NOT end with `✅`) as options. Closed milestones are not offered. Never propose re-opening a closed milestone — if the owner wants one reopened, they will say so explicitly, and milestone open/close is human-only regardless. If the owner manually types a closed milestone's name, abort with: "Milestone '{name}' is closed (✅). Pick an open milestone or skip the field — I do not reopen milestones."
 
 3.2. **Check for existing PRDs** —
    - **If From-PRD mode**: the PRD is already chosen — skip the picker. Read the PRD file, store the PRD ID, and pass the PRD content to the architect review in step 3.6. Skip the rest of this step.
@@ -154,12 +154,7 @@ Create a new decision file using the Decision-Driven Workflow.
 
 6. **DECISION_LOG.md is a derived view** (`ddw-index` regenerates from DEC files). The new DEC file IS the source of truth — no manual log row needed.
 
-7. **If a milestone was provided**, add the decision ID to the appropriate section in `{workflowDir}/MILESTONES.md`. If the milestone section doesn't exist yet, create it.
-
-7.5. **Check milestone phase status** — if a milestone was provided and the section already exists:
-   - If the section heading ends with `✅` (phase is complete): warn the user: "Milestone '{name}' is already marked complete. Adding a new decision will reopen it. Proceed?"
-   - If the user confirms → remove the `✅` marker from the section heading (reopening the phase) and add the decision ID.
-   - If the user declines → ask which milestone to use instead, or skip milestone assignment (can be assigned later before `decided`).
+7. **If a milestone was provided**, add the decision ID to the appropriate section in `{workflowDir}/MILESTONES.md` (append a bullet under that milestone's heading; do not modify the heading itself). The picker in step 3 already restricted choice to open milestones, so the section is guaranteed to exist and to not end with `✅`. If — by manual intervention — the section heading does end with `✅` at this point, abort: "Milestone '{name}' is closed (✅). I do not reopen milestones. Pick a different milestone or skip the field." Do not propose reopening. Do not strip the `✅`.
 
 8. **Remind the user**: The architect review is complete and embedded in the decision file. A TASK may only be created once the Owner changes status to `decided`. Milestone assignment is required before `decided`.
 

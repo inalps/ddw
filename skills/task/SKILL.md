@@ -34,9 +34,12 @@ Create a new task file using the Decision-Driven Workflow.
 
 5.5. **Check milestone phase status** — if a related decision was given:
    - Read `{workflowDir}/MILESTONES.md`.
-   - Find the `##` section that lists this decision ID.
-   - If the section heading ends with `✅` (phase is complete): warn the user: "Decision {id} belongs to milestone '{name}' which is already complete. Are you sure you want to add a task to a completed phase? Consider creating a new decision in an active milestone instead."
-   - Only proceed if the user explicitly confirms. If the user declines, stop — do not create the task.
+   - Find the `##` or `###` section that lists this decision ID.
+   - If the section heading ends with `✅` (phase is closed): **abort** with:
+     ```
+     Decision {id} belongs to milestone '{name}', which is closed (✅). Cannot create a task under a closed milestone. If the milestone should be reopened, the owner must remove the ✅ in MILESTONES.md by hand first — milestone open/close is human-only.
+     ```
+     Do not propose reopening. Do not ask any follow-up question. Do not suggest moving the decision to another milestone. Stop.
 
 6. **Get the actual current UTC datetime** by running:
    ```bash

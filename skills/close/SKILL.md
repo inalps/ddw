@@ -177,16 +177,20 @@ Task to close: $ARGUMENTS (if not provided, ask the user which task).
        - **Do NOT auto-move PRDs.** PRD closure is the owner's call via `/ddw:prd close` (§13 authority matrix). If the just-archived decision references a PRD that is not yet closed, REMIND the owner: "DEC-{id} archived. PRD-{id} is still active — run `/ddw:prd close PRD-{id}` if all relevant decisions exist."
     c. Logs are derived views — `ddw-index` regenerates them on demand. Skip inline sync.
 
-14.5. **Milestone phase completion** — check if archiving this decision completed a milestone:
-   - Only run this step if a decision was archived in step 14b.
-   - Read `{workflowDir}/MILESTONES.md`.
-   - Find the `##` section that lists the just-archived decision ID (e.g., `DEC-20260406-auth-redesign`).
-   - If the section heading already has `✅`, skip (already marked complete).
-   - If found, collect every decision ID listed in that section (lines starting with `- DEC-`).
-   - For each decision ID, check if it exists in `{workflowDir}/decisions/archive/`. A decision is "phase-done" only if its file is in the archive directory.
-   - If **ALL** decisions in the section are archived → append `✅` to the section heading (e.g., `## Phase 1 — MVP` becomes `## Phase 1 — MVP ✅`).
-   - Report: "Milestone '{name}' is now complete — all decisions archived."
-   - If some decisions are NOT archived → report progress: "Milestone '{name}': {done}/{total} decisions complete."
+14.5. **Milestone phase completion — reminder only, never auto-tick.** Opening / closing a milestone is human-only. This step never appends, removes, or otherwise modifies the `✅` marker on any milestone heading in `MILESTONES.md`. Behavior:
+   - Only run if a decision was archived in step 14b.
+   - Read `{workflowDir}/MILESTONES.md`. Find the `##` or `###` section that lists the just-archived decision ID.
+   - If the section heading already has `✅`, skip silently.
+   - Otherwise collect every decision ID listed in that section (lines starting with `- DEC-`) and check archive status for each (file in `{workflowDir}/decisions/archive/` = archived, file in `{workflowDir}/decisions/` = active).
+   - **If ALL DECs in the section are archived** → report (do not modify the heading):
+     ```
+     Milestone '{name}': all {N} DECs archived. Owner: if you consider the phase complete, run `/ddw:milestone-close {milestone}` to apply the ✅. Skipped — not my call.
+     ```
+   - **If some DECs are still active** → report progress only:
+     ```
+     Milestone '{name}': {done}/{total} DECs archived.
+     ```
+   - Do not ask follow-up questions, do not propose closing, do not propose opening the next milestone. Surface the state and stop.
 
 15. **Worktree cleanup + branch deletion** (git only — skip if not a git repo or no `worktree.taskDir` configured):
     - Resolve the task's worktree path from `ddw.json.worktree.taskDir` substituted with the task ID.

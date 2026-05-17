@@ -21,6 +21,20 @@ Send it! Start implementing a task. Task: $ARGUMENTS (if not provided, use the m
 
 3. **Verify the linked decision is `decided`** — read the task's `**Decision:**` field. If it references a decision, confirm its status is `decided`. If not, block and explain.
 
+3.5. **Prior-milestone gate (numbered phases only).** If the task's linked decision exists and has a `Milestone:` field, run this check before doing any other work:
+   - Read `{workflowDir}/MILESTONES.md`.
+   - Locate the DEC's milestone token (e.g. `M3`, `Phase 2`).
+   - **Determine numbering scheme:** if the milestone token matches a sequential pattern — `M{N}` where N is an integer, or `Phase {N}` — it is numbered (ordered with implicit dependency). Anything else (e.g. `Crawler hardening`, `Brand onboarding polish`) is unnumbered (standalone). Skip the rest of this step for unnumbered milestones and for DECs with no `Milestone:` field.
+   - **Find the immediately-prior milestone in the same numbered family** (e.g. for `M3`, look for `M2`; for `Phase 2`, look for `Phase 1`). If no prior milestone exists (e.g. the DEC is in `M1`), skip the rest of this step.
+   - **Check the prior milestone's heading.** A milestone is closed iff its heading ends with `✅`. If the prior milestone heading does NOT end with `✅`, ask the owner exactly:
+     ```
+     This task sits in {current-milestone}, but {prior-milestone} is still open. Proceed anyway?
+     ```
+     Use AskUserQuestion with two options: `Proceed` and `Abort`.
+     - **Proceed** → continue to step 4. Append a Work Log entry noting the override: `Prior-milestone gate: {prior-milestone} still open; owner authorized proceeding.`
+     - **Abort** → stop immediately. Do not change task status, do not propose closing the prior milestone, do not propose re-opening anything, do not suggest an alternative task, do not ask any follow-up question. The owner will give the next instruction.
+   - **Milestone open/close is human-only.** This skill never modifies milestone markers in `MILESTONES.md`. To close a milestone, the owner runs `/ddw:milestone-close`.
+
 4. **Check for session handoff** — read the task's `## Session Handoff` section. Parse the structured fields:
    - `**Status:**` — in_progress, blocked, or none
    - `**Completed ACs:**` — list of AC IDs already passed
