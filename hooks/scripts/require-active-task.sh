@@ -29,14 +29,18 @@ case "$FILE_PATH" in
   *) exit 0 ;;                  # outside project — pass through
 esac
 
-# Skip workflow/doc files — only gate implementation code
+# Skip workflow/doc files — only gate implementation code.
+# Note: do NOT exempt `*/.worktrees/*` as a whole — that would short-circuit
+# the worktree-locality enforcement below (lines ~98–119) by letting code
+# edits inside ANY worktree pass without checking whether that worktree
+# corresponds to one of the caller's in_progress tasks. The workflow / docs
+# / *.md exemptions above already cover paperwork inside a worktree.
 if [[ "$FILE_PATH" == *"/$DDW_WORKFLOW_DIR/"* ]] || \
    [[ "$FILE_PATH" == *"CLAUDE.md"* ]] || \
    [[ "$FILE_PATH" == *".claude/"* ]] || \
    [[ "$FILE_PATH" == *"/docs/"* ]] || \
    [[ "$FILE_PATH" == *"/tasks/"* ]] || \
    [[ "$FILE_PATH" == *"/.gitignore" || "$FILE_PATH" == *".gitignore" ]] || \
-   [[ "$FILE_PATH" == *"/.worktrees/"* ]] || \
    [[ "$FILE_PATH" == *".md" && "$FILE_PATH" != *"index"* ]]; then
   exit 0
 fi
