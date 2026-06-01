@@ -1,0 +1,31 @@
+{
+  "name": "ddw-local",
+  "plugins": [
+    {
+      "name": "ddw",
+      "source": "./",
+      "skills": [
+        "./skills/init",
+        "./skills/ideate",
+        "./skills/decision",
+        "./skills/task",
+        "./skills/sendit",
+        "./skills/review",
+        "./skills/qa",
+        "./skills/close",
+        "./skills/pr",
+        "./skills/prd",
+        "./skills/architect",
+        "./skills/audit",
+        "./skills/auto",
+        "./skills/drift",
+        "./skills/milestone-close",
+        "./skills/sync-spec",
+        "./skills/upgrade"
+      ]
+    }
+  ],
+  "owner": {
+    "name": "Inalps"
+  }
+}
